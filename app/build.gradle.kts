@@ -1,7 +1,17 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+val releaseKeystorePropertiesFile = rootProject.file("keystore.properties")
+val releaseKeystoreProperties = Properties().apply {
+    if (releaseKeystorePropertiesFile.exists()) {
+        releaseKeystorePropertiesFile.inputStream().use(::load)
+    }
+}
+val hasReleaseKeystore = releaseKeystorePropertiesFile.exists()
 
 android {
     namespace = "de.kagerding.savetheapple.android"
@@ -13,18 +23,32 @@ android {
 
     defaultConfig {
         applicationId = "de.kagerding.savetheapple.android"
-        minSdk = 29
-        targetSdk = 36
+        minSdk = 24
+        targetSdk = 37
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = rootProject.file(releaseKeystoreProperties["storeFile"] as String)
+                storePassword = releaseKeystoreProperties["storePassword"] as String
+                keyAlias = releaseKeystoreProperties["keyAlias"] as String
+                keyPassword = releaseKeystoreProperties["keyPassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
-                enable = false
+                enable = true
             }
         }
     }
@@ -34,6 +58,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
