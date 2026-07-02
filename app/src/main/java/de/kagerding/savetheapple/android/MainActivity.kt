@@ -8,26 +8,26 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
 import android.view.Window
+import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -37,14 +37,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -54,16 +55,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -119,7 +125,12 @@ private val LocalHapticsEnabled = staticCompositionLocalOf { true }
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK))
+        window.decorView.setBackgroundColor(android.graphics.Color.BLACK)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK),
+        )
         setTerminalBars(window)
         setContent {
             SaveTheAppleTheme {
@@ -130,8 +141,9 @@ class MainActivity : ComponentActivity() {
 }
 
 private fun setTerminalBars(window: Window) {
-    window.statusBarColor = android.graphics.Color.BLACK
-    window.navigationBarColor = android.graphics.Color.BLACK
+    val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+    insetsController.isAppearanceLightStatusBars = false
+    insetsController.isAppearanceLightNavigationBars = false
 }
 
 private fun resetRunState(prefs: SharedPreferences) {
@@ -201,6 +213,7 @@ private fun readStoredLives(prefs: SharedPreferences): Int {
 private enum class Screen {
     Splash,
     Menu,
+    GameStartIntro,
     Game,
     Credits,
     Settings,
@@ -233,35 +246,11 @@ private enum class WordleHint {
     Correct,
 }
 
-private val Screen.sceneRank: Int
-    get() = when (this) {
-        Screen.Splash -> 0
-        Screen.Menu -> 1
-        Screen.Settings -> 2
-        Screen.Credits -> 2
-        Screen.Game -> 3
-        Screen.Failure -> 4
-    }
-
-private val Screen.sceneAccent: Color
-    get() = when (this) {
-        Screen.Splash -> NeonCyan
-        Screen.Menu -> NeonGreen
-        Screen.Game -> DangerRed
-        Screen.Credits -> WarmAmber
-        Screen.Settings -> NeonCyan
-        Screen.Failure -> DangerRed
-    }
-
-private val Screen.sceneCommand: String
-    get() = when (this) {
-        Screen.Splash -> "BOOT"
-        Screen.Menu -> "HUB READY"
-        Screen.Game -> "BREACH START"
-        Screen.Credits -> "TRACE AUTHORS"
-        Screen.Settings -> "CONFIG"
-        Screen.Failure -> "LOCKOUT"
-    }
+private enum class GameStartIntroPhase {
+    Blackout,
+    Skull,
+    Glitch,
+}
 
 private val GamePhase.label: String
     get() = when (this) {
@@ -308,50 +297,69 @@ private val GamePhase.background: Int
         GamePhase.Finale -> R.drawable.secondback
     }
 
-@OptIn(ExperimentalAnimationApi::class)
-@Composable
-private fun EscapeKagApp() {
-    val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
-    val prefs = remember {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
-    var screen by remember { mutableStateOf(Screen.Splash) }
-    var currentStage by remember { mutableStateOf(readStoredStage(prefs)) }
-    var isMuted by remember { mutableStateOf(prefs.getBoolean(PREF_MUTED, false)) }
-    var hapticsEnabled by remember { mutableStateOf(prefs.getBoolean(PREF_HAPTICS, true)) }
-    var developerMode by remember {
-        mutableStateOf(DEV_TOOLS_AVAILABLE && prefs.getBoolean(PREF_DEVELOPER_MODE, false))
-    }
-    var invincible by remember {
-        mutableStateOf(DEV_TOOLS_AVAILABLE && prefs.getBoolean(PREF_INVINCIBLE, false))
-    }
-    var lives by remember { mutableStateOf(readStoredLives(prefs)) }
-    var errorFlash by remember { mutableStateOf(false) }
-    var resetSignal by remember { mutableStateOf(0) }
+@Stable
+private class EscapeKagAppState(
+    private val prefs: SharedPreferences,
+    private val haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
+) {
+    var screen by mutableStateOf(Screen.Splash)
+        private set
+    var currentStage by mutableStateOf(readStoredStage(prefs))
+        private set
+    var isMuted by mutableStateOf(prefs.getBoolean(PREF_MUTED, false))
+        private set
+    var hapticsEnabled by mutableStateOf(prefs.getBoolean(PREF_HAPTICS, true))
+        private set
+    var developerMode by mutableStateOf(DEV_TOOLS_AVAILABLE && prefs.getBoolean(PREF_DEVELOPER_MODE, false))
+        private set
+    var invincible by mutableStateOf(DEV_TOOLS_AVAILABLE && prefs.getBoolean(PREF_INVINCIBLE, false))
+        private set
+    var lives by mutableStateOf(readStoredLives(prefs))
+        private set
+    var errorFlash by mutableStateOf(false)
+        private set
+    var resetSignal by mutableStateOf(0)
+        private set
 
-    LaunchedEffect(errorFlash) {
-        if (errorFlash) {
-            delay(760)
-            errorFlash = false
-        }
+    val canNavigateBack: Boolean
+        get() = screen != Screen.Menu &&
+            screen != Screen.Splash &&
+            screen != Screen.GameStartIntro &&
+            screen != Screen.Failure
+
+    val background: Int
+        get() = screen.backgroundForStage(currentStage)
+
+    val showAmbientMotion: Boolean
+        get() = screen == Screen.Splash || screen == Screen.Game
+
+    val showErrorOverlay: Boolean
+        get() = errorFlash || screen == Screen.Failure
+
+    fun navigateTo(destination: Screen) {
+        screen = destination
     }
 
-    fun saveStage(stage: Int) {
-        val next = stage.coerceIn(0, gameNodes.lastIndex)
-        currentStage = next
-        prefs.edit().putInt(PREF_STAGE, next).apply()
+    fun startGameFromMenu() {
+        screen = if (currentStage == 0) Screen.GameStartIntro else Screen.Game
     }
 
-    fun saveLives(value: Int) {
-        lives = value.coerceIn(0, MAX_LIVES)
-        prefs.edit().putInt(PREF_LIVES, lives).apply()
+    fun finishGameStartIntro() {
+        screen = Screen.Game
     }
 
-    fun performHaptic(type: HapticFeedbackType = HapticFeedbackType.LongPress) {
-        if (hapticsEnabled) {
-            haptics.performHapticFeedback(type)
-        }
+    fun clearErrorFlash() {
+        errorFlash = false
+    }
+
+    fun updateMuted(muted: Boolean) {
+        isMuted = muted
+        prefs.edit().putBoolean(PREF_MUTED, muted).apply()
+    }
+
+    fun updateHapticsEnabled(enabled: Boolean) {
+        hapticsEnabled = enabled
+        prefs.edit().putBoolean(PREF_HAPTICS, enabled).apply()
     }
 
     fun resetSavedData() {
@@ -371,7 +379,7 @@ private fun EscapeKagApp() {
             .putBoolean(PREF_INVINCIBLE, false)
             .apply()
         resetSignal += 1
-        screen = Screen.Menu
+        navigateTo(Screen.Menu)
     }
 
     fun unlockDeveloperMode() {
@@ -389,7 +397,7 @@ private fun EscapeKagApp() {
             saveStage(currentStage + 1)
             resetSignal += 1
         } else {
-            screen = Screen.Menu
+            navigateTo(Screen.Menu)
         }
     }
 
@@ -400,197 +408,360 @@ private fun EscapeKagApp() {
             saveLives(MAX_LIVES)
             return
         }
+
         val remaining = lives - 1
         if (remaining <= 0) {
             currentStage = 0
             lives = MAX_LIVES
             resetRunState(prefs)
             resetSignal += 1
-            screen = Screen.Failure
+            navigateTo(Screen.Failure)
         } else {
             saveLives(remaining)
         }
     }
 
-    BackHandler(enabled = screen != Screen.Menu && screen != Screen.Splash && screen != Screen.Failure) {
-        screen = Screen.Menu
+    fun restoreLives() {
+        saveLives(MAX_LIVES)
     }
 
-    CompositionLocalProvider(LocalHapticsEnabled provides hapticsEnabled) {
-        AnimatedContent(
-            targetState = screen,
-            transitionSpec = {
-                val movingForward = targetState.sceneRank >= initialState.sceneRank
-                val enter = when (targetState) {
-                    Screen.Game -> slideInVertically(tween(720, easing = LinearEasing)) { it } +
-                        fadeIn(tween(480))
-                    Screen.Settings -> slideInHorizontally(tween(520, easing = LinearEasing)) { -it / 2 } +
-                        fadeIn(tween(260))
-                    Screen.Credits -> slideInHorizontally(tween(520, easing = LinearEasing)) { it / 2 } +
-                        fadeIn(tween(260))
-                    Screen.Menu -> if (initialState == Screen.Splash) {
-                        slideInVertically(tween(620, easing = LinearEasing)) { -it / 4 } +
-                            fadeIn(tween(520))
-                    } else {
-                        slideInHorizontally(tween(420, easing = LinearEasing)) {
-                            if (movingForward) it / 4 else -it / 4
-                        } + fadeIn(tween(260))
-                    }
-                    Screen.Failure -> fadeIn(tween(160))
-                    Screen.Splash -> fadeIn(tween(240))
-                }
-                val exit = when (initialState) {
-                    Screen.Game -> slideOutVertically(tween(420, easing = LinearEasing)) { it / 3 } +
-                        fadeOut(tween(260))
-                    Screen.Settings -> slideOutHorizontally(tween(360, easing = LinearEasing)) { -it / 3 } +
-                        fadeOut(tween(220))
-                    Screen.Credits -> slideOutHorizontally(tween(360, easing = LinearEasing)) { it / 3 } +
-                        fadeOut(tween(220))
-                    Screen.Splash -> slideOutVertically(tween(520, easing = LinearEasing)) { it / 5 } +
-                        fadeOut(tween(360))
-                    Screen.Menu -> slideOutHorizontally(tween(460, easing = LinearEasing)) {
-                        if (targetState == Screen.Settings) it / 3 else -it / 3
-                    } + fadeOut(tween(240))
-                    Screen.Failure -> fadeOut(tween(120))
-                }
-                enter togetherWith exit
-            },
-            label = "scene-router",
-        ) { activeScreen ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                when (activeScreen) {
-                    Screen.Splash -> SplashScreen(
-                        errorFlash = errorFlash,
-                        onFinished = { screen = Screen.Menu },
-                    )
-                    Screen.Menu -> MenuScreen(
-                        progress = currentStage,
-                        lives = lives,
-                        errorFlash = errorFlash,
-                        onStart = { screen = Screen.Game },
-                        onSettings = { screen = Screen.Settings },
-                        onCredits = { screen = Screen.Credits },
-                        onDeveloperUnlock = if (DEV_TOOLS_AVAILABLE) ::unlockDeveloperMode else null,
-                    )
-                    Screen.Game -> GameDeckScreen(
-                        node = gameNodes[currentStage],
-                        stage = currentStage,
-                        totalStages = gameNodes.size,
-                        lives = lives,
-                        developerMode = developerMode,
-                        invincible = invincible,
-                        errorFlash = errorFlash,
-                        resetSignal = resetSignal,
-                        onBack = { screen = Screen.Menu },
-                        onSolved = ::solveCurrentNode,
-                        onWrong = ::wrongAnswer,
-                        onRestoreLives = { saveLives(MAX_LIVES) },
-                        onToggleInvincible = { enabled ->
-                            invincible = enabled
-                            prefs.edit().putBoolean(PREF_INVINCIBLE, enabled).apply()
-                            if (enabled) {
-                                saveLives(MAX_LIVES)
-                            }
-                        },
-                    )
-                    Screen.Credits -> CreditsScreen(
-                        errorFlash = errorFlash,
-                        onBack = { screen = Screen.Menu },
-                    )
-                    Screen.Settings -> SettingsScreen(
-                        isMuted = isMuted,
-                        hapticsEnabled = hapticsEnabled,
-                        errorFlash = errorFlash,
-                        onMutedChange = { muted ->
-                            isMuted = muted
-                            prefs.edit().putBoolean(PREF_MUTED, muted).apply()
-                        },
-                        onHapticsChange = { enabled ->
-                            hapticsEnabled = enabled
-                            prefs.edit().putBoolean(PREF_HAPTICS, enabled).apply()
-                        },
-                        onResetProgress = ::resetSavedData,
-                        onBack = { screen = Screen.Menu },
-                    )
-                    Screen.Failure -> FailureScreen(
-                        errorFlash = true,
-                        onCrash = {
-                            resetRunState(prefs)
-                            throw IllegalStateException("KAG security lockout: all lives depleted")
-                        },
-                    )
-                }
-                SceneTransitionOverlay(activeScreen)
-            }
+    fun updateInvincible(enabled: Boolean) {
+        invincible = enabled
+        prefs.edit().putBoolean(PREF_INVINCIBLE, enabled).apply()
+        if (enabled) {
+            saveLives(MAX_LIVES)
+        }
+    }
+
+    fun crashAfterFailure(): Nothing {
+        resetRunState(prefs)
+        throw IllegalStateException("KAG security lockout: all lives depleted")
+    }
+
+    private fun saveStage(stage: Int) {
+        val next = stage.coerceIn(0, gameNodes.lastIndex)
+        currentStage = next
+        prefs.edit().putInt(PREF_STAGE, next).apply()
+    }
+
+    private fun saveLives(value: Int) {
+        val next = value.coerceIn(0, MAX_LIVES)
+        lives = next
+        prefs.edit().putInt(PREF_LIVES, next).apply()
+    }
+
+    private fun performHaptic(type: HapticFeedbackType = HapticFeedbackType.LongPress) {
+        if (hapticsEnabled) {
+            haptics.performHapticFeedback(type)
         }
     }
 }
 
 @Composable
-private fun SceneTransitionOverlay(screen: Screen) {
-    var armed by remember(screen) { mutableStateOf(false) }
-    LaunchedEffect(screen) {
-        armed = true
+private fun rememberEscapeKagAppState(): EscapeKagAppState {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val prefs = remember(context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
-    val progress by animateFloatAsState(
-        targetValue = if (armed) 1f else 0f,
-        animationSpec = tween(durationMillis = if (screen == Screen.Game) 920 else 680, easing = LinearEasing),
-        label = "scene-wipe",
-    )
-    if (progress >= 0.995f) return
+    return remember(prefs, haptics) {
+        EscapeKagAppState(prefs = prefs, haptics = haptics)
+    }
+}
 
-    val accent = screen.sceneAccent
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .alpha((1f - progress * 0.72f).coerceIn(0f, 1f)),
+@Composable
+private fun EscapeKagApp() {
+    val appState = rememberEscapeKagAppState()
+
+    LaunchedEffect(appState.errorFlash) {
+        if (appState.errorFlash) {
+            delay(760)
+            appState.clearErrorFlash()
+        }
+    }
+
+    BackHandler(enabled = appState.canNavigateBack) {
+        appState.navigateTo(Screen.Menu)
+    }
+
+    CompositionLocalProvider(LocalHapticsEnabled provides appState.hapticsEnabled) {
+        EscapeAppScaffold(
+            background = appState.background,
+            showAmbientMotion = appState.showAmbientMotion,
+            errorFlash = appState.showErrorOverlay,
+        ) {
+            AppRouteContent(appState)
+        }
+    }
+}
+
+private fun Screen.backgroundForStage(stage: Int): Int {
+    return when (this) {
+        Screen.Splash,
+        Screen.GameStartIntro,
+        Screen.Settings,
+        Screen.Credits,
+        Screen.Failure -> R.drawable.secondback
+        Screen.Menu -> R.drawable.kagescape
+        Screen.Game -> gameNodes[stage.coerceIn(0, gameNodes.lastIndex)].phase.background
+    }
+}
+
+@Composable
+private fun EscapeAppScaffold(
+    background: Int,
+    showAmbientMotion: Boolean,
+    errorFlash: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = TerminalBlack,
     ) {
-        val sweepX = size.width * (progress * 1.45f - 0.24f)
-        drawRect(Color.Black.copy(alpha = (0.62f - progress * 0.36f).coerceAtLeast(0f)))
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(TerminalBlack),
+        ) {
+            AppBackground(background)
+            if (showAmbientMotion) {
+                MatrixRain()
+            }
+            AppBackdropScrim()
+            Scaffold(
+                containerColor = Color.Transparent,
+                contentWindowInsets = WindowInsets(0.dp),
+            ) { _ ->
+                Box(modifier = Modifier.fillMaxSize()) {
+                    content()
+                }
+            }
+            CrtOverlay(errorFlash)
+        }
+    }
+}
+
+@Composable
+private fun AppRouteContent(appState: EscapeKagAppState) {
+    AnimatedContent(
+        targetState = appState.screen,
+        transitionSpec = {
+            if (targetState == Screen.GameStartIntro ||
+                (initialState == Screen.GameStartIntro && targetState == Screen.Game)
+            ) {
+                return@AnimatedContent fadeIn(
+                    animationSpec = tween(durationMillis = 130, easing = LinearEasing),
+                ) togetherWith fadeOut(
+                    animationSpec = tween(durationMillis = 90, easing = LinearEasing),
+                )
+            }
+
+            val direction = if (targetState.routeOrder >= initialState.routeOrder) 1 else -1
+            val enter = slideInHorizontally(
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            ) { width -> width / 10 * direction } + fadeIn(
+                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+            )
+            val exit = slideOutHorizontally(
+                animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing),
+            ) { width -> -width / 12 * direction } + fadeOut(
+                animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
+            )
+            enter togetherWith exit
+        },
+        label = "app-route",
+    ) { screen ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            when (screen) {
+                Screen.Splash -> SplashScreen(
+                    onFinished = { appState.navigateTo(Screen.Menu) },
+                )
+                Screen.Menu -> MenuScreen(
+                    progress = appState.currentStage,
+                    lives = appState.lives,
+                    onStart = appState::startGameFromMenu,
+                    onSettings = { appState.navigateTo(Screen.Settings) },
+                    onCredits = { appState.navigateTo(Screen.Credits) },
+                    onDeveloperUnlock = if (DEV_TOOLS_AVAILABLE) appState::unlockDeveloperMode else null,
+                )
+                Screen.GameStartIntro -> GameStartIntroScreen(
+                    onFinished = appState::finishGameStartIntro,
+                )
+                Screen.Game -> GameDeckScreen(
+                    node = gameNodes[appState.currentStage],
+                    stage = appState.currentStage,
+                    totalStages = gameNodes.size,
+                    lives = appState.lives,
+                    developerMode = appState.developerMode,
+                    invincible = appState.invincible,
+                    resetSignal = appState.resetSignal,
+                    onBack = { appState.navigateTo(Screen.Menu) },
+                    onSolved = appState::solveCurrentNode,
+                    onWrong = appState::wrongAnswer,
+                    onRestoreLives = appState::restoreLives,
+                    onToggleInvincible = appState::updateInvincible,
+                )
+                Screen.Credits -> CreditsScreen(
+                    onBack = { appState.navigateTo(Screen.Menu) },
+                )
+                Screen.Settings -> SettingsScreen(
+                    isMuted = appState.isMuted,
+                    hapticsEnabled = appState.hapticsEnabled,
+                    onMutedChange = appState::updateMuted,
+                    onHapticsChange = appState::updateHapticsEnabled,
+                    onResetProgress = appState::resetSavedData,
+                    onBack = { appState.navigateTo(Screen.Menu) },
+                )
+                Screen.Failure -> FailureScreen(
+                    onCrash = appState::crashAfterFailure,
+                )
+            }
+            RouteGlitchReveal(screen)
+        }
+    }
+}
+
+private val Screen.routeOrder: Int
+    get() = when (this) {
+        Screen.Splash -> 0
+        Screen.Menu -> 1
+        Screen.Settings -> 2
+        Screen.Credits -> 2
+        Screen.GameStartIntro -> 3
+        Screen.Game -> 4
+        Screen.Failure -> 5
+    }
+
+@Composable
+private fun AppBackground(background: Int) {
+    Crossfade(
+        targetState = background,
+        animationSpec = tween(durationMillis = 240),
+        label = "app-background",
+    ) { backgroundRes ->
+        Image(
+            painter = painterResource(backgroundRes),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            alpha = 0.76f,
+        )
+    }
+}
+
+@Composable
+private fun AppBackdropScrim() {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                listOf(
+                    Color.Black.copy(alpha = 0.34f),
+                    Color.Black.copy(alpha = 0.12f),
+                    Color.Black.copy(alpha = 0.58f),
+                ),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun RouteGlitchReveal(screen: Screen) {
+    if (screen == Screen.Splash || screen == Screen.GameStartIntro) return
+
+    var visible by remember(screen) { mutableStateOf(true) }
+    LaunchedEffect(screen) {
+        visible = true
+        delay(if (screen == Screen.Game) 420 else 260)
+        visible = false
+    }
+
+    if (visible) {
+        HackerGlitchOverlay(
+            modifier = Modifier.fillMaxSize(),
+            intensity = if (screen == Screen.Game) 0.9f else 0.52f,
+        )
+    }
+}
+
+@Composable
+private fun HackerGlitchOverlay(
+    modifier: Modifier = Modifier,
+    intensity: Float = 1f,
+    darkPulse: Boolean = false,
+) {
+    val transition = rememberInfiniteTransition(label = "hacker-glitch-overlay")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 110, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "glitch-phase",
+    )
+    val drift by transition.animateFloat(
+        initialValue = -18f,
+        targetValue = 18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 170, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "glitch-drift",
+    )
+
+    Canvas(modifier = modifier) {
+        if (darkPulse) {
+            drawRect(Color.Black.copy(alpha = (0.18f + phase * 0.18f) * intensity))
+        }
+
+        val lineColor = NeonGreen.copy(alpha = 0.24f * intensity)
+        var scanY = 0f
+        val scanStep = 7.dp.toPx()
+        while (scanY < size.height) {
+            drawLine(
+                color = lineColor,
+                start = Offset(0f, scanY),
+                end = Offset(size.width, scanY),
+                strokeWidth = 1.dp.toPx(),
+            )
+            scanY += scanStep
+        }
+
+        repeat(15) { index ->
+            val seed = index * 0.137f
+            val y = size.height * ((seed + phase * (0.18f + index * 0.009f)) % 1f)
+            val height = (2 + index % 5).dp.toPx()
+            val start = size.width * (((index * 0.211f) + phase * 0.37f) % 1f) - size.width * 0.24f
+            val width = size.width * (0.16f + (index % 4) * 0.08f)
+            val color = when (index % 3) {
+                0 -> NeonCyan
+                1 -> DangerRed
+                else -> NeonGreen
+            }
+            drawRect(
+                color = color.copy(alpha = (0.16f + (index % 4) * 0.035f) * intensity),
+                topLeft = Offset(start + drift * (index % 3 - 1), y),
+                size = Size(width, height),
+            )
+        }
+
         drawRect(
             brush = Brush.horizontalGradient(
                 colors = listOf(
                     Color.Transparent,
-                    accent.copy(alpha = 0.72f),
-                    DangerRed.copy(alpha = if (screen == Screen.Game) 0.42f else 0.18f),
+                    NeonCyan.copy(alpha = 0.16f * intensity),
+                    DangerRed.copy(alpha = 0.12f * intensity),
                     Color.Transparent,
                 ),
-                startX = sweepX - 160.dp.toPx(),
-                endX = sweepX + 160.dp.toPx(),
+                startX = size.width * phase - 80.dp.toPx(),
+                endX = size.width * phase + 120.dp.toPx(),
             ),
-        )
-        repeat(9) { index ->
-            val y = size.height * (index + 1) / 10f
-            val laneStart = (sweepX - index * 42.dp.toPx()).coerceIn(-size.width, size.width)
-            drawLine(
-                color = accent.copy(alpha = 0.42f * (1f - progress)),
-                start = Offset(laneStart, y),
-                end = Offset((laneStart + size.width * 0.42f).coerceAtMost(size.width), y),
-                strokeWidth = (1.4f + index % 3).dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-        }
-        drawContext.canvas.nativeCanvas.drawText(
-            screen.sceneCommand,
-            24.dp.toPx(),
-            size.height - 42.dp.toPx(),
-            android.graphics.Paint().apply {
-                color = android.graphics.Color.argb(
-                    (180 * (1f - progress)).toInt().coerceIn(0, 180),
-                    105,
-                    255,
-                    154,
-                )
-                textSize = 14.sp.toPx()
-                typeface = android.graphics.Typeface.MONOSPACE
-                isFakeBoldText = true
-            },
         )
     }
 }
 
 @Composable
-private fun SplashScreen(errorFlash: Boolean, onFinished: () -> Unit) {
+private fun SplashScreen(onFinished: () -> Unit) {
     LaunchedEffect(Unit) {
         delay(2800)
         onFinished()
@@ -616,40 +787,102 @@ private fun SplashScreen(errorFlash: Boolean, onFinished: () -> Unit) {
         label = "jitter",
     )
 
-    TerminalScaffold(background = R.drawable.secondback, errorFlash = errorFlash) {
-        Column(
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.kag_logo),
+            contentDescription = "KAG Logo",
             modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Image(
-                painter = painterResource(R.drawable.kag_logo),
-                contentDescription = "KAG Logo",
-                modifier = Modifier
-                    .size(230.dp)
-                    .graphicsLayer {
-                        scaleX = pulse
-                        scaleY = pulse
-                        translationX = jitter
+                .size(230.dp)
+                .graphicsLayer {
+                    scaleX = pulse
+                    scaleY = pulse
+                    translationX = jitter
+                }
+                .clip(RoundedCornerShape(2.dp))
+                .border(1.dp, NeonCyan.copy(alpha = 0.65f), RoundedCornerShape(2.dp)),
+            contentScale = ContentScale.Crop,
+        )
+        Spacer(Modifier.height(34.dp))
+        GlitchText(
+            text = "ESCAPE THE KAG",
+            style = TerminalTextStyle.copy(
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+            ),
+        )
+        Spacer(Modifier.height(10.dp))
+        StreamingStatus("boot sequence // P-Seminar Informatik 25/26")
+    }
+}
+
+@Composable
+private fun GameStartIntroScreen(onFinished: () -> Unit) {
+    var phase by remember { mutableStateOf(GameStartIntroPhase.Blackout) }
+
+    LaunchedEffect(Unit) {
+        delay(360)
+        phase = GameStartIntroPhase.Skull
+        delay(920)
+        phase = GameStartIntroPhase.Glitch
+        delay(760)
+        onFinished()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TerminalBlack),
+        contentAlignment = Alignment.Center,
+    ) {
+        Crossfade(
+            targetState = phase,
+            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+            label = "new-game-intro-phase",
+        ) { activePhase ->
+            when (activePhase) {
+                GameStartIntroPhase.Blackout -> Box(Modifier.fillMaxSize())
+                GameStartIntroPhase.Skull,
+                GameStartIntroPhase.Glitch -> Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .safeDrawingPadding()
+                        .padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    SkullMascot(mascotSize = if (activePhase == GameStartIntroPhase.Glitch) 168.dp else 142.dp)
+                    Spacer(Modifier.height(22.dp))
+                    if (activePhase == GameStartIntroPhase.Glitch) {
+                        GlitchText(
+                            text = "SIGNALSTÖRUNG",
+                            style = TerminalTextStyle.copy(
+                                color = NeonGreen,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black,
+                                textAlign = TextAlign.Center,
+                            ),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        StreamingStatus("decrypting first node // unstable link")
                     }
-                    .clip(RoundedCornerShape(2.dp))
-                    .border(1.dp, NeonCyan.copy(alpha = 0.65f), RoundedCornerShape(2.dp)),
-                contentScale = ContentScale.Crop,
+                }
+            }
+        }
+
+        if (phase == GameStartIntroPhase.Glitch) {
+            HackerGlitchOverlay(
+                modifier = Modifier.fillMaxSize(),
+                intensity = 1f,
+                darkPulse = true,
             )
-            Spacer(Modifier.height(34.dp))
-            GlitchText(
-                text = "ESCAPE THE KAG",
-                style = TerminalTextStyle.copy(
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Center,
-                ),
-            )
-            Spacer(Modifier.height(10.dp))
-            StreamingStatus("boot sequence // P-Seminar Informatik 25/26")
         }
     }
 }
@@ -658,7 +891,6 @@ private fun SplashScreen(errorFlash: Boolean, onFinished: () -> Unit) {
 private fun MenuScreen(
     progress: Int,
     lives: Int,
-    errorFlash: Boolean,
     onStart: () -> Unit,
     onSettings: () -> Unit,
     onCredits: () -> Unit,
@@ -668,84 +900,81 @@ private fun MenuScreen(
     val nextNode = gameNodes[progress.coerceIn(0, gameNodes.lastIndex)]
     var devTapCount by remember { mutableStateOf(0) }
 
-    TerminalScaffold(background = R.drawable.kagescape, errorFlash = errorFlash) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(horizontal = 24.dp, vertical = 22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(horizontal = 24.dp, vertical = 22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            LivesIndicator(lives)
+            Box(
+                modifier = Modifier.clickable {
+                    val unlock = onDeveloperUnlock ?: return@clickable
+                    devTapCount += 1
+                    if (devTapCount >= DEV_UNLOCK_TAPS) {
+                        devTapCount = 0
+                        unlock()
+                    }
+                },
             ) {
-                LivesIndicator(lives)
-                Box(
-                    modifier = Modifier.clickable {
-                        val unlock = onDeveloperUnlock ?: return@clickable
-                        devTapCount += 1
-                        if (devTapCount >= DEV_UNLOCK_TAPS) {
-                            devTapCount = 0
-                            unlock()
-                        }
-                    },
-                ) {
-                    SkullMascot(mascotSize = 70.dp)
-                }
+                SkullMascot(mascotSize = 70.dp)
             }
-            Spacer(Modifier.height(6.dp))
-            GlitchText(
-                text = "Escape the KAG",
-                style = TerminalTextStyle.copy(
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Center,
-                ),
-            )
-            Text(
-                text = "Korbinian-Aigner-Gymnasium Erding",
-                color = WarmAmber,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.weight(1f))
-            StreamingStatus("${nextNode.phase.label} // node ${progress + 1}/${gameNodes.size}")
-            Spacer(Modifier.height(18.dp))
-            Column(
-                modifier = Modifier.widthIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                HackerButton(
-                    text = startLabel,
-                    accent = NeonGreen,
-                    large = true,
-                    onClick = onStart,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    HackerButton(
-                        text = "Optionen",
-                        accent = NeonCyan,
-                        modifier = Modifier.weight(1f),
-                        onClick = onSettings,
-                    )
-                    HackerButton(
-                        text = "Credits",
-                        accent = WarmAmber,
-                        modifier = Modifier.weight(1f),
-                        onClick = onCredits,
-                    )
-                }
-            }
-            Spacer(Modifier.height(34.dp))
         }
+        Spacer(Modifier.height(6.dp))
+        GlitchText(
+            text = "Escape the KAG",
+            style = TerminalTextStyle.copy(
+                fontSize = 36.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+            ),
+        )
+        Text(
+            text = "Korbinian-Aigner-Gymnasium Erding",
+            color = WarmAmber,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.weight(1f))
+        StreamingStatus("${nextNode.phase.label} // node ${progress + 1}/${gameNodes.size}")
+        Spacer(Modifier.height(18.dp))
+        Column(
+            modifier = Modifier.widthIn(max = 420.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            HackerButton(
+                text = startLabel,
+                accent = NeonGreen,
+                large = true,
+                onClick = onStart,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                HackerButton(
+                    text = "Optionen",
+                    accent = NeonCyan,
+                    modifier = Modifier.weight(1f),
+                    onClick = onSettings,
+                )
+                HackerButton(
+                    text = "Credits",
+                    accent = WarmAmber,
+                    modifier = Modifier.weight(1f),
+                    onClick = onCredits,
+                )
+            }
+        }
+        Spacer(Modifier.height(34.dp))
     }
 }
 
-@OptIn(ExperimentalAnimationApi::class)
 @Composable
 private fun GameDeckScreen(
     node: GameNode,
@@ -754,7 +983,6 @@ private fun GameDeckScreen(
     lives: Int,
     developerMode: Boolean,
     invincible: Boolean,
-    errorFlash: Boolean,
     resetSignal: Int,
     onBack: () -> Unit,
     onSolved: () -> Unit,
@@ -762,19 +990,17 @@ private fun GameDeckScreen(
     onRestoreLives: () -> Unit,
     onToggleInvincible: (Boolean) -> Unit,
 ) {
-    TerminalScaffold(background = node.phase.background, errorFlash = errorFlash) {
+    Box(modifier = Modifier.fillMaxSize()) {
         PhaseAmbientOverlay(node.phase)
-        AnimatedContent(
-            targetState = node,
-            transitionSpec = {
-                (slideInHorizontally(tween(520, easing = LinearEasing)) { it / 2 } + fadeIn(tween(320))) togetherWith
-                    (slideOutHorizontally(tween(320, easing = LinearEasing)) { -it / 3 } + fadeOut(tween(220)))
-            },
+        Crossfade(
+            targetState = stage.coerceIn(0, gameNodes.lastIndex),
+            animationSpec = tween(durationMillis = 180),
             label = "game-node",
-        ) { activeNode ->
+        ) { activeStage ->
+            val activeNode = gameNodes[activeStage]
             PuzzleScreen(
                 node = activeNode,
-                stage = stage,
+                stage = activeStage,
                 totalStages = totalStages,
                 lives = lives,
                 developerMode = developerMode,
@@ -787,7 +1013,6 @@ private fun GameDeckScreen(
                 onToggleInvincible = onToggleInvincible,
             )
         }
-        PhaseChangeOverlay(node.phase)
     }
 }
 
@@ -999,140 +1224,133 @@ private fun PuzzleScreen(
 private fun SettingsScreen(
     isMuted: Boolean,
     hapticsEnabled: Boolean,
-    errorFlash: Boolean,
     onMutedChange: (Boolean) -> Unit,
     onHapticsChange: (Boolean) -> Unit,
     onResetProgress: () -> Unit,
     onBack: () -> Unit,
 ) {
-    TerminalScaffold(background = R.drawable.secondback, errorFlash = errorFlash) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(20.dp),
-        ) {
-            HeaderBar(overline = "Optionen", lives = MAX_LIVES, onBack = onBack)
-            Spacer(Modifier.height(18.dp))
-            GlitchText(
-                text = "Einstellungen",
-                style = TerminalTextStyle.copy(fontSize = 29.sp, fontWeight = FontWeight.Black),
-            )
-            Spacer(Modifier.height(22.dp))
-            SettingsToggle(
-                title = "Ton",
-                subtitle = if (isMuted) "Ton Aus" else "Ton An",
-                checked = !isMuted,
-                onCheckedChange = { checked -> onMutedChange(!checked) },
-            )
-            Spacer(Modifier.height(14.dp))
-            SettingsToggle(
-                title = "Haptik",
-                subtitle = if (hapticsEnabled) "Vibration An" else "Vibration Aus",
-                checked = hapticsEnabled,
-                onCheckedChange = onHapticsChange,
-            )
-            Spacer(Modifier.height(26.dp))
-            HackerButton(
-                text = "Gespeicherte Daten zurücksetzen",
-                accent = DangerRed,
-                onClick = onResetProgress,
-            )
-            Spacer(Modifier.weight(1f))
-            StreamingStatus("settings saved locally // persistent state armed")
-        }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(20.dp),
+    ) {
+        HeaderBar(overline = "Optionen", lives = MAX_LIVES, onBack = onBack)
+        Spacer(Modifier.height(18.dp))
+        GlitchText(
+            text = "Einstellungen",
+            style = TerminalTextStyle.copy(fontSize = 29.sp, fontWeight = FontWeight.Black),
+        )
+        Spacer(Modifier.height(22.dp))
+        SettingsToggle(
+            title = "Ton",
+            subtitle = if (isMuted) "Ton Aus" else "Ton An",
+            checked = !isMuted,
+            onCheckedChange = { checked -> onMutedChange(!checked) },
+        )
+        Spacer(Modifier.height(14.dp))
+        SettingsToggle(
+            title = "Haptik",
+            subtitle = if (hapticsEnabled) "Vibration An" else "Vibration Aus",
+            checked = hapticsEnabled,
+            onCheckedChange = onHapticsChange,
+        )
+        Spacer(Modifier.height(26.dp))
+        HackerButton(
+            text = "Gespeicherte Daten zurücksetzen",
+            accent = DangerRed,
+            onClick = onResetProgress,
+        )
+        Spacer(Modifier.weight(1f))
+        StreamingStatus("settings saved locally // persistent state armed")
     }
 }
 
 @Composable
-private fun CreditsScreen(errorFlash: Boolean, onBack: () -> Unit) {
+private fun CreditsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    TerminalScaffold(background = R.drawable.secondback, errorFlash = errorFlash) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            HeaderBar(overline = "Credits", lives = MAX_LIVES, onBack = onBack)
-            Spacer(Modifier.height(18.dp))
-            GlitchText(
-                text = "Credits",
-                style = TerminalTextStyle.copy(fontSize = 30.sp, fontWeight = FontWeight.Black),
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        HeaderBar(overline = "Credits", lives = MAX_LIVES, onBack = onBack)
+        Spacer(Modifier.height(18.dp))
+        GlitchText(
+            text = "Credits",
+            style = TerminalTextStyle.copy(fontSize = 30.sp, fontWeight = FontWeight.Black),
+        )
+        Spacer(Modifier.height(20.dp))
+        TerminalPanel {
+            Text(
+                text = "Korbinian-Aigner-Gymnasium Erding\n\n" +
+                    "Projektteam: P-Seminar Informatik App Programmierung\n" +
+                    "Schuljahr: 25/26\n\n" +
+                    "P-Seminar Informatik App Programmierung Schuljahr 25/26",
+                style = TerminalTextStyle.copy(fontSize = 15.sp, lineHeight = 23.sp),
+                color = TextPrimary,
             )
-            Spacer(Modifier.height(20.dp))
-            TerminalPanel {
-                Text(
-                        text = "Korbinian-Aigner-Gymnasium Erding\n\n" +
-                        "Projektteam: P-Seminar Informatik App Programmierung\n" +
-                        "Schuljahr: 25/26\n\n" +
-                        "P-Seminar Informatik App Programmierung Schuljahr 25/26",
-                    style = TerminalTextStyle.copy(fontSize = 15.sp, lineHeight = 23.sp),
-                    color = TextPrimary,
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconTerminalButton(
-                    label = "Schule",
-                    accent = NeonCyan,
-                    onClick = { openUrl(context, SCHOOL_WEBSITE) },
-                ) {
-                    GlobeIcon(Modifier.size(30.dp), NeonCyan)
-                }
-                Spacer(Modifier.width(24.dp))
-                IconTerminalButton(
-                    label = "GitHub",
-                    accent = WarmAmber,
-                    onClick = { openUrl(context, GITHUB_URL) },
-                ) {
-                    GithubIcon(Modifier.size(30.dp), WarmAmber)
-                }
-            }
-            Spacer(Modifier.height(24.dp))
         }
+        Spacer(Modifier.weight(1f))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconTerminalButton(
+                label = "Schule",
+                accent = NeonCyan,
+                onClick = { openUrl(context, SCHOOL_WEBSITE) },
+            ) {
+                GlobeIcon(Modifier.size(30.dp), NeonCyan)
+            }
+            Spacer(Modifier.width(24.dp))
+            IconTerminalButton(
+                label = "GitHub",
+                accent = WarmAmber,
+                onClick = { openUrl(context, GITHUB_URL) },
+            ) {
+                GithubIcon(Modifier.size(30.dp), WarmAmber)
+            }
+        }
+        Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun FailureScreen(errorFlash: Boolean, onCrash: () -> Unit) {
+private fun FailureScreen(onCrash: () -> Unit) {
     LaunchedEffect(Unit) {
         delay(1100)
         onCrash()
     }
-    TerminalScaffold(background = R.drawable.secondback, errorFlash = errorFlash) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            SkullMascot(mascotSize = 130.dp, danger = true)
-            Spacer(Modifier.height(24.dp))
-            GlitchText(
-                text = "FATAL ERROR",
-                style = TerminalTextStyle.copy(
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Center,
-                ),
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "3/3 Leben verloren // System wird terminiert",
-                color = DangerRed,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        SkullMascot(mascotSize = 130.dp, danger = true)
+        Spacer(Modifier.height(24.dp))
+        GlitchText(
+            text = "FATAL ERROR",
+            style = TerminalTextStyle.copy(
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Black,
                 textAlign = TextAlign.Center,
-            )
-        }
+            ),
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "3/3 Leben verloren // System wird terminiert",
+            color = DangerRed,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -1154,6 +1372,11 @@ private fun WordleGate(
     var guesses by remember { mutableStateOf(emptyList<String>()) }
     var currentGuess by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("5 Buchstaben. Gleiche Farbe wie Wordle: grün = richtig, gelb = falsche Position.") }
+    val messageColor = when {
+        message.startsWith("ACCESS GRANTED") -> NeonGreen
+        message.startsWith("WORDLE LOCKOUT") -> DangerRed
+        else -> TextSecondary
+    }
 
     Column(
         modifier = Modifier.widthIn(max = 430.dp),
@@ -1168,7 +1391,7 @@ private fun WordleGate(
         WordleLegend()
         Text(
             text = message,
-            color = if (message.startsWith("ACCESS")) DangerRed else TextSecondary,
+            color = messageColor,
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
             lineHeight = 18.sp,
@@ -1203,10 +1426,16 @@ private fun WordleGate(
                     }
                     else -> {
                         val nextGuesses = guesses + guess
-                        guesses = nextGuesses
                         currentGuess = ""
-                        message = "ACCESS DENIED // ${lives - 1} Leben verbleibend"
-                        onWrong()
+                        if (nextGuesses.size >= WORDLE_MAX_ATTEMPTS) {
+                            guesses = emptyList()
+                            message = "WORDLE LOCKOUT // alle Versuche verbraucht // ${lives - 1} Leben verbleibend"
+                            onWrong()
+                        } else {
+                            guesses = nextGuesses
+                            val remainingAttempts = WORDLE_MAX_ATTEMPTS - nextGuesses.size
+                            message = "WORDLE MISS // $remainingAttempts Versuche verbleibend"
+                        }
                     }
                 }
             },
@@ -1400,84 +1629,6 @@ private fun PhaseAmbientOverlay(phase: GamePhase) {
                 startY = y - 30.dp.toPx(),
                 endY = y + 30.dp.toPx(),
             ),
-        )
-    }
-}
-
-@Composable
-private fun PhaseChangeOverlay(phase: GamePhase) {
-    var armed by remember(phase) { mutableStateOf(false) }
-    LaunchedEffect(phase) {
-        armed = true
-    }
-    val progress by animateFloatAsState(
-        targetValue = if (armed) 1f else 0f,
-        animationSpec = tween(durationMillis = 1100, easing = LinearEasing),
-        label = "phase-change",
-    )
-    if (progress >= 0.995f) return
-
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .alpha((1f - progress).coerceIn(0f, 1f)),
-    ) {
-        val accent = phase.accent
-        val bandTop = size.height * (0.48f - progress * 0.48f)
-        val bandHeight = size.height * (0.04f + progress * 0.96f)
-        drawRect(Color.Black.copy(alpha = 0.5f))
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    Color.Black.copy(alpha = 0.82f),
-                    accent.copy(alpha = 0.28f),
-                    Color.Black.copy(alpha = 0.82f),
-                ),
-            ),
-            topLeft = Offset(0f, bandTop),
-            size = Size(size.width, bandHeight),
-        )
-        repeat(6) { index ->
-            val y = size.height * (0.28f + index * 0.08f)
-            val startX = size.width * (progress - 0.28f) - index * 24.dp.toPx()
-            drawLine(
-                color = accent.copy(alpha = 0.58f),
-                start = Offset(startX.coerceAtLeast(0f), y),
-                end = Offset((startX + size.width * 0.58f).coerceAtMost(size.width), y),
-                strokeWidth = 2.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-        }
-        drawContext.canvas.nativeCanvas.drawText(
-            phase.label,
-            24.dp.toPx(),
-            size.height * 0.5f,
-            android.graphics.Paint().apply {
-                color = android.graphics.Color.argb(
-                    (220 * (1f - progress * 0.55f)).toInt().coerceIn(0, 220),
-                    232,
-                    255,
-                    244,
-                )
-                textSize = 24.sp.toPx()
-                typeface = android.graphics.Typeface.MONOSPACE
-                isFakeBoldText = true
-            },
-        )
-        drawContext.canvas.nativeCanvas.drawText(
-            phase.systemLine,
-            24.dp.toPx(),
-            size.height * 0.5f + 28.dp.toPx(),
-            android.graphics.Paint().apply {
-                color = android.graphics.Color.argb(
-                    (160 * (1f - progress * 0.55f)).toInt().coerceIn(0, 160),
-                    0,
-                    229,
-                    255,
-                )
-                textSize = 12.sp.toPx()
-                typeface = android.graphics.Typeface.MONOSPACE
-            },
         )
     }
 }
@@ -1830,41 +1981,6 @@ private fun SupportInputs(
 }
 
 @Composable
-private fun TerminalScaffold(
-    background: Int,
-    errorFlash: Boolean,
-    content: @Composable () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(TerminalBlack),
-    ) {
-        Image(
-            painter = painterResource(background),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-            alpha = 0.76f,
-        )
-        MatrixRain()
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRect(
-                brush = Brush.verticalGradient(
-                    listOf(
-                        Color.Black.copy(alpha = 0.32f),
-                        Color.Black.copy(alpha = 0.08f),
-                        Color.Black.copy(alpha = 0.56f),
-                    ),
-                ),
-            )
-        }
-        content()
-        CrtOverlay(errorFlash)
-    }
-}
-
-@Composable
 private fun MatrixRain() {
     val transition = rememberInfiniteTransition(label = "matrix")
     val offset by transition.animateFloat(
@@ -1934,25 +2050,26 @@ private fun HackerButton(
     }
     val widthModifier = if (compact) Modifier.width(52.dp) else Modifier.fillMaxWidth()
 
-    Box(
+    Button(
+        onClick = {
+            if (hapticsEnabled) {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+            onClick()
+        },
         modifier = modifier
             .then(widthModifier)
-            .height(height)
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, accent.copy(alpha = 0.62f), RoundedCornerShape(8.dp))
-            .background(accent.copy(alpha = 0.11f), RoundedCornerShape(8.dp))
-            .clickable {
-                if (hapticsEnabled) {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                }
-                onClick()
-            }
-            .padding(horizontal = if (compact) 0.dp else 14.dp),
-        contentAlignment = Alignment.Center,
+            .height(height),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = accent.copy(alpha = 0.11f),
+            contentColor = accent,
+        ),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.62f)),
+        contentPadding = PaddingValues(horizontal = if (compact) 0.dp else 14.dp),
     ) {
         Text(
             text = text,
-            color = accent,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = if (large) 21.sp else 15.sp,
