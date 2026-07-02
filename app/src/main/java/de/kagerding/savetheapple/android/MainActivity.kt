@@ -8,6 +8,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
 import android.view.Window
+import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -119,7 +120,12 @@ private val LocalHapticsEnabled = staticCompositionLocalOf { true }
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK))
+        window.decorView.setBackgroundColor(android.graphics.Color.BLACK)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK),
+        )
         setTerminalBars(window)
         setContent {
             SaveTheAppleTheme {
@@ -130,8 +136,9 @@ class MainActivity : ComponentActivity() {
 }
 
 private fun setTerminalBars(window: Window) {
-    window.statusBarColor = android.graphics.Color.BLACK
-    window.navigationBarColor = android.graphics.Color.BLACK
+    val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+    insetsController.isAppearanceLightStatusBars = false
+    insetsController.isAppearanceLightNavigationBars = false
 }
 
 private fun resetRunState(prefs: SharedPreferences) {
@@ -417,40 +424,132 @@ private fun EscapeKagApp() {
     }
 
     CompositionLocalProvider(LocalHapticsEnabled provides hapticsEnabled) {
+        SceneHost(
+            screen = screen,
+            background = screen.backgroundForStage(currentStage),
+            errorFlash = errorFlash || screen == Screen.Failure,
+        ) { activeScreen ->
+            when (activeScreen) {
+                Screen.Splash -> SplashScreen(
+                    onFinished = { screen = Screen.Menu },
+                )
+                Screen.Menu -> MenuScreen(
+                    progress = currentStage,
+                    lives = lives,
+                    onStart = { screen = Screen.Game },
+                    onSettings = { screen = Screen.Settings },
+                    onCredits = { screen = Screen.Credits },
+                    onDeveloperUnlock = if (DEV_TOOLS_AVAILABLE) ::unlockDeveloperMode else null,
+                )
+                Screen.Game -> GameDeckScreen(
+                    node = gameNodes[currentStage],
+                    stage = currentStage,
+                    totalStages = gameNodes.size,
+                    lives = lives,
+                    developerMode = developerMode,
+                    invincible = invincible,
+                    resetSignal = resetSignal,
+                    onBack = { screen = Screen.Menu },
+                    onSolved = ::solveCurrentNode,
+                    onWrong = ::wrongAnswer,
+                    onRestoreLives = { saveLives(MAX_LIVES) },
+                    onToggleInvincible = { enabled ->
+                        invincible = enabled
+                        prefs.edit().putBoolean(PREF_INVINCIBLE, enabled).apply()
+                        if (enabled) {
+                            saveLives(MAX_LIVES)
+                        }
+                    },
+                )
+                Screen.Credits -> CreditsScreen(
+                    onBack = { screen = Screen.Menu },
+                )
+                Screen.Settings -> SettingsScreen(
+                    isMuted = isMuted,
+                    hapticsEnabled = hapticsEnabled,
+                    onMutedChange = { muted ->
+                        isMuted = muted
+                        prefs.edit().putBoolean(PREF_MUTED, muted).apply()
+                    },
+                    onHapticsChange = { enabled ->
+                        hapticsEnabled = enabled
+                        prefs.edit().putBoolean(PREF_HAPTICS, enabled).apply()
+                    },
+                    onResetProgress = ::resetSavedData,
+                    onBack = { screen = Screen.Menu },
+                )
+                Screen.Failure -> FailureScreen(
+                    onCrash = {
+                        resetRunState(prefs)
+                        throw IllegalStateException("KAG security lockout: all lives depleted")
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun Screen.backgroundForStage(stage: Int): Int {
+    return when (this) {
+        Screen.Splash,
+        Screen.Settings,
+        Screen.Credits,
+        Screen.Failure -> R.drawable.secondback
+        Screen.Menu -> R.drawable.kagescape
+        Screen.Game -> gameNodes[stage.coerceIn(0, gameNodes.lastIndex)].phase.background
+    }
+}
+
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+private fun SceneHost(
+    screen: Screen,
+    background: Int,
+    errorFlash: Boolean,
+    content: @Composable (Screen) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TerminalBlack),
+    ) {
+        SceneBackground(background)
+        MatrixRain()
+        TerminalScrim()
         AnimatedContent(
             targetState = screen,
             transitionSpec = {
                 val movingForward = targetState.sceneRank >= initialState.sceneRank
                 val enter = when (targetState) {
-                    Screen.Game -> slideInVertically(tween(720, easing = LinearEasing)) { it } +
-                        fadeIn(tween(480))
-                    Screen.Settings -> slideInHorizontally(tween(520, easing = LinearEasing)) { -it / 2 } +
-                        fadeIn(tween(260))
-                    Screen.Credits -> slideInHorizontally(tween(520, easing = LinearEasing)) { it / 2 } +
-                        fadeIn(tween(260))
+                    Screen.Game -> slideInVertically(tween(620, easing = LinearEasing)) { it / 2 } +
+                        fadeIn(tween(360))
+                    Screen.Settings -> slideInHorizontally(tween(420, easing = LinearEasing)) { -it / 3 } +
+                        fadeIn(tween(240))
+                    Screen.Credits -> slideInHorizontally(tween(420, easing = LinearEasing)) { it / 3 } +
+                        fadeIn(tween(240))
                     Screen.Menu -> if (initialState == Screen.Splash) {
-                        slideInVertically(tween(620, easing = LinearEasing)) { -it / 4 } +
-                            fadeIn(tween(520))
+                        slideInVertically(tween(520, easing = LinearEasing)) { -it / 6 } +
+                            fadeIn(tween(420))
                     } else {
-                        slideInHorizontally(tween(420, easing = LinearEasing)) {
-                            if (movingForward) it / 4 else -it / 4
-                        } + fadeIn(tween(260))
+                        slideInHorizontally(tween(360, easing = LinearEasing)) {
+                            if (movingForward) it / 5 else -it / 5
+                        } + fadeIn(tween(220))
                     }
-                    Screen.Failure -> fadeIn(tween(160))
-                    Screen.Splash -> fadeIn(tween(240))
+                    Screen.Failure -> fadeIn(tween(140))
+                    Screen.Splash -> fadeIn(tween(220))
                 }
                 val exit = when (initialState) {
-                    Screen.Game -> slideOutVertically(tween(420, easing = LinearEasing)) { it / 3 } +
-                        fadeOut(tween(260))
-                    Screen.Settings -> slideOutHorizontally(tween(360, easing = LinearEasing)) { -it / 3 } +
+                    Screen.Game -> slideOutVertically(tween(320, easing = LinearEasing)) { it / 4 } +
                         fadeOut(tween(220))
-                    Screen.Credits -> slideOutHorizontally(tween(360, easing = LinearEasing)) { it / 3 } +
-                        fadeOut(tween(220))
-                    Screen.Splash -> slideOutVertically(tween(520, easing = LinearEasing)) { it / 5 } +
-                        fadeOut(tween(360))
-                    Screen.Menu -> slideOutHorizontally(tween(460, easing = LinearEasing)) {
-                        if (targetState == Screen.Settings) it / 3 else -it / 3
-                    } + fadeOut(tween(240))
+                    Screen.Settings -> slideOutHorizontally(tween(280, easing = LinearEasing)) { -it / 4 } +
+                        fadeOut(tween(180))
+                    Screen.Credits -> slideOutHorizontally(tween(280, easing = LinearEasing)) { it / 4 } +
+                        fadeOut(tween(180))
+                    Screen.Splash -> slideOutVertically(tween(420, easing = LinearEasing)) { it / 6 } +
+                        fadeOut(tween(300))
+                    Screen.Menu -> slideOutHorizontally(tween(320, easing = LinearEasing)) {
+                        if (targetState == Screen.Settings) it / 4 else -it / 4
+                    } + fadeOut(tween(200))
                     Screen.Failure -> fadeOut(tween(120))
                 }
                 enter togetherWith exit
@@ -458,71 +557,47 @@ private fun EscapeKagApp() {
             label = "scene-router",
         ) { activeScreen ->
             Box(modifier = Modifier.fillMaxSize()) {
-                when (activeScreen) {
-                    Screen.Splash -> SplashScreen(
-                        errorFlash = errorFlash,
-                        onFinished = { screen = Screen.Menu },
-                    )
-                    Screen.Menu -> MenuScreen(
-                        progress = currentStage,
-                        lives = lives,
-                        errorFlash = errorFlash,
-                        onStart = { screen = Screen.Game },
-                        onSettings = { screen = Screen.Settings },
-                        onCredits = { screen = Screen.Credits },
-                        onDeveloperUnlock = if (DEV_TOOLS_AVAILABLE) ::unlockDeveloperMode else null,
-                    )
-                    Screen.Game -> GameDeckScreen(
-                        node = gameNodes[currentStage],
-                        stage = currentStage,
-                        totalStages = gameNodes.size,
-                        lives = lives,
-                        developerMode = developerMode,
-                        invincible = invincible,
-                        errorFlash = errorFlash,
-                        resetSignal = resetSignal,
-                        onBack = { screen = Screen.Menu },
-                        onSolved = ::solveCurrentNode,
-                        onWrong = ::wrongAnswer,
-                        onRestoreLives = { saveLives(MAX_LIVES) },
-                        onToggleInvincible = { enabled ->
-                            invincible = enabled
-                            prefs.edit().putBoolean(PREF_INVINCIBLE, enabled).apply()
-                            if (enabled) {
-                                saveLives(MAX_LIVES)
-                            }
-                        },
-                    )
-                    Screen.Credits -> CreditsScreen(
-                        errorFlash = errorFlash,
-                        onBack = { screen = Screen.Menu },
-                    )
-                    Screen.Settings -> SettingsScreen(
-                        isMuted = isMuted,
-                        hapticsEnabled = hapticsEnabled,
-                        errorFlash = errorFlash,
-                        onMutedChange = { muted ->
-                            isMuted = muted
-                            prefs.edit().putBoolean(PREF_MUTED, muted).apply()
-                        },
-                        onHapticsChange = { enabled ->
-                            hapticsEnabled = enabled
-                            prefs.edit().putBoolean(PREF_HAPTICS, enabled).apply()
-                        },
-                        onResetProgress = ::resetSavedData,
-                        onBack = { screen = Screen.Menu },
-                    )
-                    Screen.Failure -> FailureScreen(
-                        errorFlash = true,
-                        onCrash = {
-                            resetRunState(prefs)
-                            throw IllegalStateException("KAG security lockout: all lives depleted")
-                        },
-                    )
-                }
+                content(activeScreen)
                 SceneTransitionOverlay(activeScreen)
             }
         }
+        CrtOverlay(errorFlash)
+    }
+}
+
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+private fun SceneBackground(background: Int) {
+    AnimatedContent(
+        targetState = background,
+        transitionSpec = {
+            fadeIn(tween(280, easing = LinearEasing)) togetherWith
+                fadeOut(tween(280, easing = LinearEasing))
+        },
+        label = "scene-background",
+    ) { backgroundRes ->
+        Image(
+            painter = painterResource(backgroundRes),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            alpha = 0.76f,
+        )
+    }
+}
+
+@Composable
+private fun TerminalScrim() {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                listOf(
+                    Color.Black.copy(alpha = 0.32f),
+                    Color.Black.copy(alpha = 0.08f),
+                    Color.Black.copy(alpha = 0.56f),
+                ),
+            ),
+        )
     }
 }
 
@@ -590,7 +665,7 @@ private fun SceneTransitionOverlay(screen: Screen) {
 }
 
 @Composable
-private fun SplashScreen(errorFlash: Boolean, onFinished: () -> Unit) {
+private fun SplashScreen(onFinished: () -> Unit) {
     LaunchedEffect(Unit) {
         delay(2800)
         onFinished()
@@ -616,41 +691,39 @@ private fun SplashScreen(errorFlash: Boolean, onFinished: () -> Unit) {
         label = "jitter",
     )
 
-    TerminalScaffold(background = R.drawable.secondback, errorFlash = errorFlash) {
-        Column(
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.kag_logo),
+            contentDescription = "KAG Logo",
             modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Image(
-                painter = painterResource(R.drawable.kag_logo),
-                contentDescription = "KAG Logo",
-                modifier = Modifier
-                    .size(230.dp)
-                    .graphicsLayer {
-                        scaleX = pulse
-                        scaleY = pulse
-                        translationX = jitter
-                    }
-                    .clip(RoundedCornerShape(2.dp))
-                    .border(1.dp, NeonCyan.copy(alpha = 0.65f), RoundedCornerShape(2.dp)),
-                contentScale = ContentScale.Crop,
-            )
-            Spacer(Modifier.height(34.dp))
-            GlitchText(
-                text = "ESCAPE THE KAG",
-                style = TerminalTextStyle.copy(
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Center,
-                ),
-            )
-            Spacer(Modifier.height(10.dp))
-            StreamingStatus("boot sequence // P-Seminar Informatik 25/26")
-        }
+                .size(230.dp)
+                .graphicsLayer {
+                    scaleX = pulse
+                    scaleY = pulse
+                    translationX = jitter
+                }
+                .clip(RoundedCornerShape(2.dp))
+                .border(1.dp, NeonCyan.copy(alpha = 0.65f), RoundedCornerShape(2.dp)),
+            contentScale = ContentScale.Crop,
+        )
+        Spacer(Modifier.height(34.dp))
+        GlitchText(
+            text = "ESCAPE THE KAG",
+            style = TerminalTextStyle.copy(
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+            ),
+        )
+        Spacer(Modifier.height(10.dp))
+        StreamingStatus("boot sequence // P-Seminar Informatik 25/26")
     }
 }
 
@@ -658,7 +731,6 @@ private fun SplashScreen(errorFlash: Boolean, onFinished: () -> Unit) {
 private fun MenuScreen(
     progress: Int,
     lives: Int,
-    errorFlash: Boolean,
     onStart: () -> Unit,
     onSettings: () -> Unit,
     onCredits: () -> Unit,
@@ -668,80 +740,78 @@ private fun MenuScreen(
     val nextNode = gameNodes[progress.coerceIn(0, gameNodes.lastIndex)]
     var devTapCount by remember { mutableStateOf(0) }
 
-    TerminalScaffold(background = R.drawable.kagescape, errorFlash = errorFlash) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(horizontal = 24.dp, vertical = 22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(horizontal = 24.dp, vertical = 22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            LivesIndicator(lives)
+            Box(
+                modifier = Modifier.clickable {
+                    val unlock = onDeveloperUnlock ?: return@clickable
+                    devTapCount += 1
+                    if (devTapCount >= DEV_UNLOCK_TAPS) {
+                        devTapCount = 0
+                        unlock()
+                    }
+                },
             ) {
-                LivesIndicator(lives)
-                Box(
-                    modifier = Modifier.clickable {
-                        val unlock = onDeveloperUnlock ?: return@clickable
-                        devTapCount += 1
-                        if (devTapCount >= DEV_UNLOCK_TAPS) {
-                            devTapCount = 0
-                            unlock()
-                        }
-                    },
-                ) {
-                    SkullMascot(mascotSize = 70.dp)
-                }
+                SkullMascot(mascotSize = 70.dp)
             }
-            Spacer(Modifier.height(6.dp))
-            GlitchText(
-                text = "Escape the KAG",
-                style = TerminalTextStyle.copy(
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Center,
-                ),
-            )
-            Text(
-                text = "Korbinian-Aigner-Gymnasium Erding",
-                color = WarmAmber,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.weight(1f))
-            StreamingStatus("${nextNode.phase.label} // node ${progress + 1}/${gameNodes.size}")
-            Spacer(Modifier.height(18.dp))
-            Column(
-                modifier = Modifier.widthIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                HackerButton(
-                    text = startLabel,
-                    accent = NeonGreen,
-                    large = true,
-                    onClick = onStart,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    HackerButton(
-                        text = "Optionen",
-                        accent = NeonCyan,
-                        modifier = Modifier.weight(1f),
-                        onClick = onSettings,
-                    )
-                    HackerButton(
-                        text = "Credits",
-                        accent = WarmAmber,
-                        modifier = Modifier.weight(1f),
-                        onClick = onCredits,
-                    )
-                }
-            }
-            Spacer(Modifier.height(34.dp))
         }
+        Spacer(Modifier.height(6.dp))
+        GlitchText(
+            text = "Escape the KAG",
+            style = TerminalTextStyle.copy(
+                fontSize = 36.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+            ),
+        )
+        Text(
+            text = "Korbinian-Aigner-Gymnasium Erding",
+            color = WarmAmber,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.weight(1f))
+        StreamingStatus("${nextNode.phase.label} // node ${progress + 1}/${gameNodes.size}")
+        Spacer(Modifier.height(18.dp))
+        Column(
+            modifier = Modifier.widthIn(max = 420.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            HackerButton(
+                text = startLabel,
+                accent = NeonGreen,
+                large = true,
+                onClick = onStart,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                HackerButton(
+                    text = "Optionen",
+                    accent = NeonCyan,
+                    modifier = Modifier.weight(1f),
+                    onClick = onSettings,
+                )
+                HackerButton(
+                    text = "Credits",
+                    accent = WarmAmber,
+                    modifier = Modifier.weight(1f),
+                    onClick = onCredits,
+                )
+            }
+        }
+        Spacer(Modifier.height(34.dp))
     }
 }
 
@@ -754,7 +824,6 @@ private fun GameDeckScreen(
     lives: Int,
     developerMode: Boolean,
     invincible: Boolean,
-    errorFlash: Boolean,
     resetSignal: Int,
     onBack: () -> Unit,
     onSolved: () -> Unit,
@@ -762,7 +831,7 @@ private fun GameDeckScreen(
     onRestoreLives: () -> Unit,
     onToggleInvincible: (Boolean) -> Unit,
 ) {
-    TerminalScaffold(background = node.phase.background, errorFlash = errorFlash) {
+    Box(modifier = Modifier.fillMaxSize()) {
         PhaseAmbientOverlay(node.phase)
         AnimatedContent(
             targetState = node,
@@ -999,140 +1068,133 @@ private fun PuzzleScreen(
 private fun SettingsScreen(
     isMuted: Boolean,
     hapticsEnabled: Boolean,
-    errorFlash: Boolean,
     onMutedChange: (Boolean) -> Unit,
     onHapticsChange: (Boolean) -> Unit,
     onResetProgress: () -> Unit,
     onBack: () -> Unit,
 ) {
-    TerminalScaffold(background = R.drawable.secondback, errorFlash = errorFlash) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(20.dp),
-        ) {
-            HeaderBar(overline = "Optionen", lives = MAX_LIVES, onBack = onBack)
-            Spacer(Modifier.height(18.dp))
-            GlitchText(
-                text = "Einstellungen",
-                style = TerminalTextStyle.copy(fontSize = 29.sp, fontWeight = FontWeight.Black),
-            )
-            Spacer(Modifier.height(22.dp))
-            SettingsToggle(
-                title = "Ton",
-                subtitle = if (isMuted) "Ton Aus" else "Ton An",
-                checked = !isMuted,
-                onCheckedChange = { checked -> onMutedChange(!checked) },
-            )
-            Spacer(Modifier.height(14.dp))
-            SettingsToggle(
-                title = "Haptik",
-                subtitle = if (hapticsEnabled) "Vibration An" else "Vibration Aus",
-                checked = hapticsEnabled,
-                onCheckedChange = onHapticsChange,
-            )
-            Spacer(Modifier.height(26.dp))
-            HackerButton(
-                text = "Gespeicherte Daten zurücksetzen",
-                accent = DangerRed,
-                onClick = onResetProgress,
-            )
-            Spacer(Modifier.weight(1f))
-            StreamingStatus("settings saved locally // persistent state armed")
-        }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(20.dp),
+    ) {
+        HeaderBar(overline = "Optionen", lives = MAX_LIVES, onBack = onBack)
+        Spacer(Modifier.height(18.dp))
+        GlitchText(
+            text = "Einstellungen",
+            style = TerminalTextStyle.copy(fontSize = 29.sp, fontWeight = FontWeight.Black),
+        )
+        Spacer(Modifier.height(22.dp))
+        SettingsToggle(
+            title = "Ton",
+            subtitle = if (isMuted) "Ton Aus" else "Ton An",
+            checked = !isMuted,
+            onCheckedChange = { checked -> onMutedChange(!checked) },
+        )
+        Spacer(Modifier.height(14.dp))
+        SettingsToggle(
+            title = "Haptik",
+            subtitle = if (hapticsEnabled) "Vibration An" else "Vibration Aus",
+            checked = hapticsEnabled,
+            onCheckedChange = onHapticsChange,
+        )
+        Spacer(Modifier.height(26.dp))
+        HackerButton(
+            text = "Gespeicherte Daten zurücksetzen",
+            accent = DangerRed,
+            onClick = onResetProgress,
+        )
+        Spacer(Modifier.weight(1f))
+        StreamingStatus("settings saved locally // persistent state armed")
     }
 }
 
 @Composable
-private fun CreditsScreen(errorFlash: Boolean, onBack: () -> Unit) {
+private fun CreditsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    TerminalScaffold(background = R.drawable.secondback, errorFlash = errorFlash) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            HeaderBar(overline = "Credits", lives = MAX_LIVES, onBack = onBack)
-            Spacer(Modifier.height(18.dp))
-            GlitchText(
-                text = "Credits",
-                style = TerminalTextStyle.copy(fontSize = 30.sp, fontWeight = FontWeight.Black),
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        HeaderBar(overline = "Credits", lives = MAX_LIVES, onBack = onBack)
+        Spacer(Modifier.height(18.dp))
+        GlitchText(
+            text = "Credits",
+            style = TerminalTextStyle.copy(fontSize = 30.sp, fontWeight = FontWeight.Black),
+        )
+        Spacer(Modifier.height(20.dp))
+        TerminalPanel {
+            Text(
+                text = "Korbinian-Aigner-Gymnasium Erding\n\n" +
+                    "Projektteam: P-Seminar Informatik App Programmierung\n" +
+                    "Schuljahr: 25/26\n\n" +
+                    "P-Seminar Informatik App Programmierung Schuljahr 25/26",
+                style = TerminalTextStyle.copy(fontSize = 15.sp, lineHeight = 23.sp),
+                color = TextPrimary,
             )
-            Spacer(Modifier.height(20.dp))
-            TerminalPanel {
-                Text(
-                        text = "Korbinian-Aigner-Gymnasium Erding\n\n" +
-                        "Projektteam: P-Seminar Informatik App Programmierung\n" +
-                        "Schuljahr: 25/26\n\n" +
-                        "P-Seminar Informatik App Programmierung Schuljahr 25/26",
-                    style = TerminalTextStyle.copy(fontSize = 15.sp, lineHeight = 23.sp),
-                    color = TextPrimary,
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconTerminalButton(
-                    label = "Schule",
-                    accent = NeonCyan,
-                    onClick = { openUrl(context, SCHOOL_WEBSITE) },
-                ) {
-                    GlobeIcon(Modifier.size(30.dp), NeonCyan)
-                }
-                Spacer(Modifier.width(24.dp))
-                IconTerminalButton(
-                    label = "GitHub",
-                    accent = WarmAmber,
-                    onClick = { openUrl(context, GITHUB_URL) },
-                ) {
-                    GithubIcon(Modifier.size(30.dp), WarmAmber)
-                }
-            }
-            Spacer(Modifier.height(24.dp))
         }
+        Spacer(Modifier.weight(1f))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconTerminalButton(
+                label = "Schule",
+                accent = NeonCyan,
+                onClick = { openUrl(context, SCHOOL_WEBSITE) },
+            ) {
+                GlobeIcon(Modifier.size(30.dp), NeonCyan)
+            }
+            Spacer(Modifier.width(24.dp))
+            IconTerminalButton(
+                label = "GitHub",
+                accent = WarmAmber,
+                onClick = { openUrl(context, GITHUB_URL) },
+            ) {
+                GithubIcon(Modifier.size(30.dp), WarmAmber)
+            }
+        }
+        Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun FailureScreen(errorFlash: Boolean, onCrash: () -> Unit) {
+private fun FailureScreen(onCrash: () -> Unit) {
     LaunchedEffect(Unit) {
         delay(1100)
         onCrash()
     }
-    TerminalScaffold(background = R.drawable.secondback, errorFlash = errorFlash) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            SkullMascot(mascotSize = 130.dp, danger = true)
-            Spacer(Modifier.height(24.dp))
-            GlitchText(
-                text = "FATAL ERROR",
-                style = TerminalTextStyle.copy(
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Center,
-                ),
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "3/3 Leben verloren // System wird terminiert",
-                color = DangerRed,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        SkullMascot(mascotSize = 130.dp, danger = true)
+        Spacer(Modifier.height(24.dp))
+        GlitchText(
+            text = "FATAL ERROR",
+            style = TerminalTextStyle.copy(
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Black,
                 textAlign = TextAlign.Center,
-            )
-        }
+            ),
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "3/3 Leben verloren // System wird terminiert",
+            color = DangerRed,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -1826,41 +1888,6 @@ private fun SupportInputs(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun TerminalScaffold(
-    background: Int,
-    errorFlash: Boolean,
-    content: @Composable () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(TerminalBlack),
-    ) {
-        Image(
-            painter = painterResource(background),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-            alpha = 0.76f,
-        )
-        MatrixRain()
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRect(
-                brush = Brush.verticalGradient(
-                    listOf(
-                        Color.Black.copy(alpha = 0.32f),
-                        Color.Black.copy(alpha = 0.08f),
-                        Color.Black.copy(alpha = 0.56f),
-                    ),
-                ),
-            )
-        }
-        content()
-        CrtOverlay(errorFlash)
     }
 }
 
