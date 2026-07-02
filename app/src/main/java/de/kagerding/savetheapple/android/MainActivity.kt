@@ -13,7 +13,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -206,6 +213,7 @@ private fun readStoredLives(prefs: SharedPreferences): Int {
 private enum class Screen {
     Splash,
     Menu,
+    GameStartIntro,
     Game,
     Credits,
     Settings,
@@ -236,6 +244,12 @@ private enum class WordleHint {
     Miss,
     Present,
     Correct,
+}
+
+private enum class GameStartIntroPhase {
+    Blackout,
+    Skull,
+    Glitch,
 }
 
 private val GamePhase.label: String
@@ -308,7 +322,10 @@ private class EscapeKagAppState(
         private set
 
     val canNavigateBack: Boolean
-        get() = screen != Screen.Menu && screen != Screen.Splash && screen != Screen.Failure
+        get() = screen != Screen.Menu &&
+            screen != Screen.Splash &&
+            screen != Screen.GameStartIntro &&
+            screen != Screen.Failure
 
     val background: Int
         get() = screen.backgroundForStage(currentStage)
@@ -321,6 +338,14 @@ private class EscapeKagAppState(
 
     fun navigateTo(destination: Screen) {
         screen = destination
+    }
+
+    fun startGameFromMenu() {
+        screen = if (currentStage == 0) Screen.GameStartIntro else Screen.Game
+    }
+
+    fun finishGameStartIntro() {
+        screen = Screen.Game
     }
 
     fun clearErrorFlash() {
@@ -473,6 +498,7 @@ private fun EscapeKagApp() {
 private fun Screen.backgroundForStage(stage: Int): Int {
     return when (this) {
         Screen.Splash,
+        Screen.GameStartIntro,
         Screen.Settings,
         Screen.Credits,
         Screen.Failure -> R.drawable.secondback
@@ -517,54 +543,94 @@ private fun EscapeAppScaffold(
 
 @Composable
 private fun AppRouteContent(appState: EscapeKagAppState) {
-    Crossfade(
+    AnimatedContent(
         targetState = appState.screen,
-        animationSpec = tween(durationMillis = 180),
+        transitionSpec = {
+            if (targetState == Screen.GameStartIntro ||
+                (initialState == Screen.GameStartIntro && targetState == Screen.Game)
+            ) {
+                return@AnimatedContent fadeIn(
+                    animationSpec = tween(durationMillis = 130, easing = LinearEasing),
+                ) togetherWith fadeOut(
+                    animationSpec = tween(durationMillis = 90, easing = LinearEasing),
+                )
+            }
+
+            val direction = if (targetState.routeOrder >= initialState.routeOrder) 1 else -1
+            val enter = slideInHorizontally(
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            ) { width -> width / 10 * direction } + fadeIn(
+                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+            )
+            val exit = slideOutHorizontally(
+                animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing),
+            ) { width -> -width / 12 * direction } + fadeOut(
+                animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
+            )
+            enter togetherWith exit
+        },
         label = "app-route",
     ) { screen ->
-        when (screen) {
-            Screen.Splash -> SplashScreen(
-                onFinished = { appState.navigateTo(Screen.Menu) },
-            )
-            Screen.Menu -> MenuScreen(
-                progress = appState.currentStage,
-                lives = appState.lives,
-                onStart = { appState.navigateTo(Screen.Game) },
-                onSettings = { appState.navigateTo(Screen.Settings) },
-                onCredits = { appState.navigateTo(Screen.Credits) },
-                onDeveloperUnlock = if (DEV_TOOLS_AVAILABLE) appState::unlockDeveloperMode else null,
-            )
-            Screen.Game -> GameDeckScreen(
-                node = gameNodes[appState.currentStage],
-                stage = appState.currentStage,
-                totalStages = gameNodes.size,
-                lives = appState.lives,
-                developerMode = appState.developerMode,
-                invincible = appState.invincible,
-                resetSignal = appState.resetSignal,
-                onBack = { appState.navigateTo(Screen.Menu) },
-                onSolved = appState::solveCurrentNode,
-                onWrong = appState::wrongAnswer,
-                onRestoreLives = appState::restoreLives,
-                onToggleInvincible = appState::updateInvincible,
-            )
-            Screen.Credits -> CreditsScreen(
-                onBack = { appState.navigateTo(Screen.Menu) },
-            )
-            Screen.Settings -> SettingsScreen(
-                isMuted = appState.isMuted,
-                hapticsEnabled = appState.hapticsEnabled,
-                onMutedChange = appState::updateMuted,
-                onHapticsChange = appState::updateHapticsEnabled,
-                onResetProgress = appState::resetSavedData,
-                onBack = { appState.navigateTo(Screen.Menu) },
-            )
-            Screen.Failure -> FailureScreen(
-                onCrash = appState::crashAfterFailure,
-            )
+        Box(modifier = Modifier.fillMaxSize()) {
+            when (screen) {
+                Screen.Splash -> SplashScreen(
+                    onFinished = { appState.navigateTo(Screen.Menu) },
+                )
+                Screen.Menu -> MenuScreen(
+                    progress = appState.currentStage,
+                    lives = appState.lives,
+                    onStart = appState::startGameFromMenu,
+                    onSettings = { appState.navigateTo(Screen.Settings) },
+                    onCredits = { appState.navigateTo(Screen.Credits) },
+                    onDeveloperUnlock = if (DEV_TOOLS_AVAILABLE) appState::unlockDeveloperMode else null,
+                )
+                Screen.GameStartIntro -> GameStartIntroScreen(
+                    onFinished = appState::finishGameStartIntro,
+                )
+                Screen.Game -> GameDeckScreen(
+                    node = gameNodes[appState.currentStage],
+                    stage = appState.currentStage,
+                    totalStages = gameNodes.size,
+                    lives = appState.lives,
+                    developerMode = appState.developerMode,
+                    invincible = appState.invincible,
+                    resetSignal = appState.resetSignal,
+                    onBack = { appState.navigateTo(Screen.Menu) },
+                    onSolved = appState::solveCurrentNode,
+                    onWrong = appState::wrongAnswer,
+                    onRestoreLives = appState::restoreLives,
+                    onToggleInvincible = appState::updateInvincible,
+                )
+                Screen.Credits -> CreditsScreen(
+                    onBack = { appState.navigateTo(Screen.Menu) },
+                )
+                Screen.Settings -> SettingsScreen(
+                    isMuted = appState.isMuted,
+                    hapticsEnabled = appState.hapticsEnabled,
+                    onMutedChange = appState::updateMuted,
+                    onHapticsChange = appState::updateHapticsEnabled,
+                    onResetProgress = appState::resetSavedData,
+                    onBack = { appState.navigateTo(Screen.Menu) },
+                )
+                Screen.Failure -> FailureScreen(
+                    onCrash = appState::crashAfterFailure,
+                )
+            }
+            RouteGlitchReveal(screen)
         }
     }
 }
+
+private val Screen.routeOrder: Int
+    get() = when (this) {
+        Screen.Splash -> 0
+        Screen.Menu -> 1
+        Screen.Settings -> 2
+        Screen.Credits -> 2
+        Screen.GameStartIntro -> 3
+        Screen.Game -> 4
+        Screen.Failure -> 5
+    }
 
 @Composable
 private fun AppBackground(background: Int) {
@@ -593,6 +659,102 @@ private fun AppBackdropScrim() {
                     Color.Black.copy(alpha = 0.12f),
                     Color.Black.copy(alpha = 0.58f),
                 ),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun RouteGlitchReveal(screen: Screen) {
+    if (screen == Screen.Splash || screen == Screen.GameStartIntro) return
+
+    var visible by remember(screen) { mutableStateOf(true) }
+    LaunchedEffect(screen) {
+        visible = true
+        delay(if (screen == Screen.Game) 420 else 260)
+        visible = false
+    }
+
+    if (visible) {
+        HackerGlitchOverlay(
+            modifier = Modifier.fillMaxSize(),
+            intensity = if (screen == Screen.Game) 0.9f else 0.52f,
+        )
+    }
+}
+
+@Composable
+private fun HackerGlitchOverlay(
+    modifier: Modifier = Modifier,
+    intensity: Float = 1f,
+    darkPulse: Boolean = false,
+) {
+    val transition = rememberInfiniteTransition(label = "hacker-glitch-overlay")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 110, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "glitch-phase",
+    )
+    val drift by transition.animateFloat(
+        initialValue = -18f,
+        targetValue = 18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 170, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "glitch-drift",
+    )
+
+    Canvas(modifier = modifier) {
+        if (darkPulse) {
+            drawRect(Color.Black.copy(alpha = (0.18f + phase * 0.18f) * intensity))
+        }
+
+        val lineColor = NeonGreen.copy(alpha = 0.24f * intensity)
+        var scanY = 0f
+        val scanStep = 7.dp.toPx()
+        while (scanY < size.height) {
+            drawLine(
+                color = lineColor,
+                start = Offset(0f, scanY),
+                end = Offset(size.width, scanY),
+                strokeWidth = 1.dp.toPx(),
+            )
+            scanY += scanStep
+        }
+
+        repeat(15) { index ->
+            val seed = index * 0.137f
+            val y = size.height * ((seed + phase * (0.18f + index * 0.009f)) % 1f)
+            val height = (2 + index % 5).dp.toPx()
+            val start = size.width * (((index * 0.211f) + phase * 0.37f) % 1f) - size.width * 0.24f
+            val width = size.width * (0.16f + (index % 4) * 0.08f)
+            val color = when (index % 3) {
+                0 -> NeonCyan
+                1 -> DangerRed
+                else -> NeonGreen
+            }
+            drawRect(
+                color = color.copy(alpha = (0.16f + (index % 4) * 0.035f) * intensity),
+                topLeft = Offset(start + drift * (index % 3 - 1), y),
+                size = Size(width, height),
+            )
+        }
+
+        drawRect(
+            brush = Brush.horizontalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    NeonCyan.copy(alpha = 0.16f * intensity),
+                    DangerRed.copy(alpha = 0.12f * intensity),
+                    Color.Transparent,
+                ),
+                startX = size.width * phase - 80.dp.toPx(),
+                endX = size.width * phase + 120.dp.toPx(),
             ),
         )
     }
@@ -658,6 +820,70 @@ private fun SplashScreen(onFinished: () -> Unit) {
         )
         Spacer(Modifier.height(10.dp))
         StreamingStatus("boot sequence // P-Seminar Informatik 25/26")
+    }
+}
+
+@Composable
+private fun GameStartIntroScreen(onFinished: () -> Unit) {
+    var phase by remember { mutableStateOf(GameStartIntroPhase.Blackout) }
+
+    LaunchedEffect(Unit) {
+        delay(360)
+        phase = GameStartIntroPhase.Skull
+        delay(920)
+        phase = GameStartIntroPhase.Glitch
+        delay(760)
+        onFinished()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TerminalBlack),
+        contentAlignment = Alignment.Center,
+    ) {
+        Crossfade(
+            targetState = phase,
+            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+            label = "new-game-intro-phase",
+        ) { activePhase ->
+            when (activePhase) {
+                GameStartIntroPhase.Blackout -> Box(Modifier.fillMaxSize())
+                GameStartIntroPhase.Skull,
+                GameStartIntroPhase.Glitch -> Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .safeDrawingPadding()
+                        .padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    SkullMascot(mascotSize = if (activePhase == GameStartIntroPhase.Glitch) 168.dp else 142.dp)
+                    Spacer(Modifier.height(22.dp))
+                    if (activePhase == GameStartIntroPhase.Glitch) {
+                        GlitchText(
+                            text = "SIGNALSTÖRUNG",
+                            style = TerminalTextStyle.copy(
+                                color = NeonGreen,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black,
+                                textAlign = TextAlign.Center,
+                            ),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        StreamingStatus("decrypting first node // unstable link")
+                    }
+                }
+            }
+        }
+
+        if (phase == GameStartIntroPhase.Glitch) {
+            HackerGlitchOverlay(
+                modifier = Modifier.fillMaxSize(),
+                intensity = 1f,
+                darkPulse = true,
+            )
+        }
     }
 }
 
@@ -1146,6 +1372,11 @@ private fun WordleGate(
     var guesses by remember { mutableStateOf(emptyList<String>()) }
     var currentGuess by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("5 Buchstaben. Gleiche Farbe wie Wordle: grün = richtig, gelb = falsche Position.") }
+    val messageColor = when {
+        message.startsWith("ACCESS GRANTED") -> NeonGreen
+        message.startsWith("WORDLE LOCKOUT") -> DangerRed
+        else -> TextSecondary
+    }
 
     Column(
         modifier = Modifier.widthIn(max = 430.dp),
@@ -1160,7 +1391,7 @@ private fun WordleGate(
         WordleLegend()
         Text(
             text = message,
-            color = if (message.startsWith("ACCESS")) DangerRed else TextSecondary,
+            color = messageColor,
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
             lineHeight = 18.sp,
@@ -1195,10 +1426,16 @@ private fun WordleGate(
                     }
                     else -> {
                         val nextGuesses = guesses + guess
-                        guesses = nextGuesses
                         currentGuess = ""
-                        message = "ACCESS DENIED // ${lives - 1} Leben verbleibend"
-                        onWrong()
+                        if (nextGuesses.size >= WORDLE_MAX_ATTEMPTS) {
+                            guesses = emptyList()
+                            message = "WORDLE LOCKOUT // alle Versuche verbraucht // ${lives - 1} Leben verbleibend"
+                            onWrong()
+                        } else {
+                            guesses = nextGuesses
+                            val remainingAttempts = WORDLE_MAX_ATTEMPTS - nextGuesses.size
+                            message = "WORDLE MISS // $remainingAttempts Versuche verbleibend"
+                        }
                     }
                 }
             },
