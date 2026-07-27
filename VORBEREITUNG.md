@@ -159,7 +159,7 @@ Ihre Codefragmente `FREIHEIT`, `1994` und `60` gibt die App jetzt selbst in der 
 | 4 | Der digitale Lockdown (Story) | — | — (nennt 3 Fragmente) |
 | 5 | Worträtsel | überall | `APPLE` |
 | 6 | Zusammensetzen | überall | `618598592019946011616125` |
-| 7 | ERDING-Matrix | überall | `1` |
+| 7 | ERDING-Matrix | überall | `1`, nach 3 Mini-Aufgaben im Raster |
 | 8 | Raumnummern | bei der Liste | `00245` |
 | 9 | Shutdown (Finale) | überall | 5 Riegel, siehe unten |
 
@@ -206,7 +206,7 @@ Einmal komplett durchspielen. Rechnet 10 Minuten ein.
 - [ ] Lockdown-Story nennt die drei Fragmente FREIHEIT, 1994, 60
 - [ ] Worträtsel: `APPLE` wird angenommen, Farben stimmen
 - [ ] Master-Code: `618598592019946011616125` wird angenommen
-- [ ] ERDING-Matrix: Die **1** ist auf dem Display gut erkennbar (auch bei Sonnenlicht draußen!)
+- [ ] ERDING-Matrix: alle drei Mini-Aufgaben gelöst, die **1** ist danach gut erkennbar (auch bei Sonnenlicht draußen!)
 - [ ] Raumnummern: Liste liegt aus, `00245` wird angenommen
 - [ ] Handbuch über den `?`-Knopf mitten im Rätsel geöffnet — Spielstand bleibt erhalten
 - [ ] Hinweis-Knopf bei mindestens einem Rätsel ausprobiert

@@ -122,6 +122,7 @@ private const val WORDLE_NODE_ID = "wordle"
 private const val WORDLE_TARGET = "APPLE"
 private const val WORDLE_MAX_ATTEMPTS = 6
 private const val FINALE_NODE_ID = "finale"
+private const val ERDING_NODE_ID = "erding_matrix"
 private val DEV_TOOLS_AVAILABLE = BuildConfig.DEBUG
 
 private val LocalHapticsEnabled = staticCompositionLocalOf { true }
@@ -250,7 +251,6 @@ private data class GameNode(
 private enum class NodeVisual {
     None,
     LetterValues,
-    ErdingMatrix,
 }
 
 private enum class WordleHint {
@@ -1191,10 +1191,6 @@ private fun PuzzleScreen(
                     StreamingStatus(phase.inputLine)
                     Spacer(Modifier.height(14.dp))
                     when (node.visual) {
-                        NodeVisual.ErdingMatrix -> {
-                            ErdingMatrix()
-                            Spacer(Modifier.height(14.dp))
-                        }
                         NodeVisual.LetterValues -> {
                             LetterValueTable()
                             Spacer(Modifier.height(14.dp))
@@ -1204,6 +1200,12 @@ private fun PuzzleScreen(
                     if (node.id == WORDLE_NODE_ID) {
                         WordleGate(
                             lives = lives,
+                            onSolved = onSolved,
+                            onWrong = onWrong,
+                        )
+                    } else if (node.id == ERDING_NODE_ID) {
+                        ErdingMatrixGate(
+                            acceptedAnswers = node.acceptedAnswers,
                             onSolved = onSolved,
                             onWrong = onWrong,
                         )
@@ -1420,10 +1422,6 @@ private fun ManualScreen(onBack: () -> Unit) {
                 when (current.visual) {
                     NodeVisual.LetterValues -> {
                         LetterValueTable()
-                        Spacer(Modifier.height(14.dp))
-                    }
-                    NodeVisual.ErdingMatrix -> {
-                        ErdingMatrix()
                         Spacer(Modifier.height(14.dp))
                     }
                     NodeVisual.None -> Unit
@@ -1818,24 +1816,65 @@ private fun evaluateWordleGuess(guess: String, target: String): List<WordleHint>
 
 /** Spaltenkoepfe der ERDING-Matrix - das Schluesselwort des Raetsels. */
 private val ERDING_COLUMNS = listOf('E', 'R', 'D', 'I', 'N', 'G')
+private const val ERDING_ROWS = 7
 
 /**
- * Leuchtmuster der ERDING-Matrix: 7 Zeilen mal 6 Spalten.
- * Die markierten Felder zeichnen die Ziffer 1 - das ist die Loesung.
- * Wer das Muster aendert, muss auch acceptedAnswers des Knotens "erding_matrix" anpassen.
+ * Eine Teilaufgabe der ERDING-Matrix. Die Loesung jeder Aufgabe sind
+ * Koordinaten, die die Gruppe im Raster antippen muss.
+ *
+ * Alle Aufgaben nutzen die Kernregel des Spiels (Buchstabe = Position im
+ * Alphabet). Die Spaltenwerte sind: E=5, R=18, D=4, I=9, N=14, G=7.
+ *
+ * Zusammen ergeben die Felder aller drei Aufgaben dieses Muster - die Ziffer 1:
+ *
+ *     . . . X . .      Zeile 1
+ *     . . X X . .      Zeile 2
+ *     . . . X . .      Zeile 3
+ *     . . . X . .      Zeile 4
+ *     . . . X . .      Zeile 5
+ *     . . . X . .      Zeile 6
+ *     . . X X X .      Zeile 7
+ *     E R D I N G
+ *
+ * Wer die Aufgaben aendert, muss pruefen, dass die Vereinigung ihrer Felder
+ * weiterhin eine erkennbare 1 ergibt - und ggf. acceptedAnswers anpassen.
  */
-private val ERDING_PATTERN = listOf(
-    "...X..",
-    "..XX..",
-    "...X..",
-    "...X..",
-    "...X..",
-    "...X..",
-    "..XXX.",
+private data class MatrixTask(
+    val label: String,
+    val prompt: String,
+    val hint: String,
+    /** Felder als (Spaltenindex 0..5, Zeile 1..7). */
+    val cells: Set<Pair<Int, Int>>,
+)
+
+private val ERDING_TASKS = listOf(
+    MatrixTask(
+        label = "AUFGABE 1 // DER STAMM",
+        prompt = "Welcher Buchstabe von ERDING hat den Buchstabenwert 9? Tippt in seiner Spalte die Felder der Zeilen 1 bis 6 an.",
+        hint = "I ist der 9. Buchstabe im Alphabet. Gesucht sind also I1, I2, I3, I4, I5 und I6.",
+        cells = (1..6).map { row -> 3 to row }.toSet(),
+    ),
+    MatrixTask(
+        label = "AUFGABE 2 // DIE FAHNE",
+        prompt = "Rechnet 2 mal 2. Der Buchstabe mit diesem Buchstabenwert zeigt euch die Spalte. Die Zeile ist die Hälfte von 4. Tippt dieses eine Feld an.",
+        hint = "2 mal 2 ist 4, und der 4. Buchstabe ist D. Die Hälfte von 4 ist 2. Gesucht ist also D2.",
+        cells = setOf(2 to 2),
+    ),
+    MatrixTask(
+        label = "AUFGABE 3 // DER FUSS",
+        prompt = "In der untersten Zeile 7 leuchten drei Felder: die Spalten mit den Buchstabenwerten 4, 9 und 14. Tippt alle drei an.",
+        hint = "4 = D, 9 = I, 14 = N. Gesucht sind also D7, I7 und N7.",
+        cells = setOf(2 to 7, 3 to 7, 4 to 7),
+    ),
 )
 
 @Composable
-private fun ErdingMatrix() {
+private fun ErdingGrid(
+    lit: Set<Pair<Int, Int>>,
+    wrong: Pair<Int, Int>?,
+    enabled: Boolean,
+    onCellTap: (Pair<Int, Int>) -> Unit,
+) {
     TerminalPanel {
         Text(
             text = "ERDING-MATRIX // Raster 7 x 6",
@@ -1851,7 +1890,7 @@ private fun ErdingMatrix() {
         ) {
             Spacer(Modifier.width(20.dp))
             ERDING_COLUMNS.forEach { letter ->
-                Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
                     Text(
                         text = letter.toString(),
                         color = WarmAmber,
@@ -1863,45 +1902,214 @@ private fun ErdingMatrix() {
             }
         }
         Spacer(Modifier.height(5.dp))
-        ERDING_PATTERN.forEachIndexed { rowIndex, row ->
+        (1..ERDING_ROWS).forEach { row ->
             Row(
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(modifier = Modifier.width(20.dp), contentAlignment = Alignment.Center) {
                     Text(
-                        text = "${rowIndex + 1}",
+                        text = "$row",
                         color = TextSecondary,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                     )
                 }
-                row.forEach { cell ->
-                    val lit = cell == 'X'
+                ERDING_COLUMNS.indices.forEach { column ->
+                    val cell = column to row
+                    val isLit = cell in lit
+                    val isWrong = cell == wrong
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(32.dp)
                             .background(
-                                if (lit) NeonGreen.copy(alpha = 0.85f) else PanelBlack,
+                                when {
+                                    isWrong -> DangerRed.copy(alpha = 0.70f)
+                                    isLit -> NeonGreen.copy(alpha = 0.85f)
+                                    else -> PanelBlack
+                                },
                                 RoundedCornerShape(4.dp),
                             )
                             .border(
                                 1.dp,
-                                if (lit) NeonGreen else NeonCyan.copy(alpha = 0.28f),
+                                when {
+                                    isWrong -> DangerRed
+                                    isLit -> NeonGreen
+                                    else -> NeonCyan.copy(alpha = 0.28f)
+                                },
                                 RoundedCornerShape(4.dp),
+                            )
+                            .then(
+                                if (enabled) Modifier.clickable { onCellTap(cell) } else Modifier,
                             ),
                     )
                 }
             }
             Spacer(Modifier.height(5.dp))
         }
-        Text(
-            text = "Haltet das Tablet ein Stueck weiter weg. Die leuchtenden Felder ergeben eine Zahl.",
-            color = TextSecondary,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp,
-            lineHeight = 15.sp,
+    }
+}
+
+@Composable
+private fun ErdingMatrixGate(
+    acceptedAnswers: Set<String>,
+    onSolved: () -> Unit,
+    onWrong: () -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    val hapticsEnabled = LocalHapticsEnabled.current
+    var taskIndex by remember { mutableStateOf(0) }
+    var litCells by remember { mutableStateOf(emptySet<Pair<Int, Int>>()) }
+    var wrongCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var wrongTaps by remember { mutableStateOf(0) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var answer by remember { mutableStateOf("") }
+    var feedback by remember { mutableStateOf<String?>(null) }
+
+    val decoded = taskIndex >= ERDING_TASKS.size
+
+    // Falsch getippte Felder nur kurz rot aufblitzen lassen.
+    LaunchedEffect(wrongCell) {
+        if (wrongCell != null) {
+            delay(650)
+            wrongCell = null
+        }
+    }
+
+    Column(
+        modifier = Modifier.widthIn(max = 460.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (decoded) {
+            TerminalPanel {
+                Text(
+                    text = "RASTER ENTSCHLÜSSELT",
+                    color = NeonGreen,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Alle Felder leuchten. Schaut euch das Muster von etwas weiter weg an: Welche Ziffer zeichnen die grünen Felder? Gebt sie ein.",
+                    color = TextPrimary,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                )
+            }
+        } else {
+            val task = ERDING_TASKS[taskIndex]
+            TerminalPanel {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = task.label,
+                        color = WarmAmber,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 12.sp,
+                    )
+                    Text(
+                        text = "${taskIndex + 1}/${ERDING_TASKS.size}",
+                        color = TextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = task.prompt,
+                    color = TextPrimary,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                )
+                if (wrongTaps >= 2) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "TIPP: ${task.hint}",
+                        color = WarmAmber,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                    )
+                }
+            }
+        }
+
+        ErdingGrid(
+            lit = litCells,
+            wrong = wrongCell,
+            enabled = !decoded,
+            onCellTap = { cell ->
+                val task = ERDING_TASKS.getOrNull(taskIndex)
+                if (task != null && cell !in litCells) {
+                    if (hapticsEnabled) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                    if (cell in task.cells) {
+                        val next = litCells + cell
+                        litCells = next
+                        message = null
+                        if (task.cells.all { it in next }) {
+                            taskIndex += 1
+                            wrongTaps = 0
+                        }
+                    } else {
+                        wrongCell = cell
+                        wrongTaps += 1
+                        message = "FEHLZUGRIFF // dieses Feld gehört nicht zur Aufgabe"
+                    }
+                }
+            },
         )
+
+        message?.takeIf { !decoded }?.let {
+            Text(
+                text = it,
+                color = DangerRed,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        if (decoded) {
+            CodeInput(
+                value = answer,
+                onValueChange = { answer = it },
+                label = "Code / Antwort",
+            )
+            HackerButton(
+                text = "Code prüfen",
+                accent = NeonGreen,
+                onClick = {
+                    val normalized = answer.normalizeAnswer()
+                    if (acceptedAnswers.any { it.normalizeAnswer() == normalized }) {
+                        feedback = null
+                        onSolved()
+                    } else {
+                        feedback = "ACCESS DENIED // falsche Ziffer"
+                        onWrong()
+                    }
+                },
+            )
+            feedback?.let {
+                GlitchText(
+                    text = it,
+                    style = TerminalTextStyle.copy(
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    ),
+                )
+            }
+        }
     }
 }
 
@@ -3266,17 +3474,17 @@ Wichtig: Das gesuchte Wort ist ENGLISCH und passt zum Apfelpfarrer.
         title = "ERDING-Matrix",
         overline = "Raster // Matrix",
         sections = listOf(
-            "Der Hacker hat ein Raster in das System geschoben. Oben trägt es das Schlüsselwort ERDING.",
-            "Einige Felder des Rasters leuchten grün auf.",
-            "Achtet nicht auf einzelne Felder, sondern auf das Gesamtbild: Die leuchtenden Felder zeichnen zusammen eine Ziffer.",
-            "Schaut euch das Raster von etwas weiter weg an. Welche Ziffer seht ihr? Gebt sie ein.",
+            "Der Hacker hat ein Raster in das System geschoben. Es ist noch komplett dunkel.",
+            "Die Spalten tragen oben das Schlüsselwort ERDING, die Zeilen sind von 1 bis 7 durchnummeriert. Ein Feld nennt man also zum Beispiel D2: Spalte D, Zeile 2.",
+            "Ihr bekommt nacheinander drei Aufgaben. Jede verrät euch, welche Felder ihr antippen müsst - und jedes richtige Feld leuchtet auf.",
+            "Tipp: Für alle drei Aufgaben braucht ihr nur die Regel aus dem Training - Buchstabe gleich Position im Alphabet.",
+            "Wenn alle Felder leuchten, zeichnen sie zusammen eine Ziffer. Die ist der Code.",
         ),
         acceptedAnswers = setOf("1"),
-        visual = NodeVisual.ErdingMatrix,
         hints = listOf(
-            "Haltet das Tablet mit ausgestrecktem Arm von euch weg oder kneift die Augen zusammen. Dann tritt das Muster hervor.",
-            "Die grünen Felder bilden einen senkrechten Strich mit einem kleinen Haken oben links und einem Fuß unten.",
-            "Es ist die Ziffer 1.",
+            "Die Buchstabenwerte der Spalten sind: E=5, R=18, D=4, I=9, N=14, G=7. Das Handbuch hat eine Tabelle.",
+            "Aufgabe 1 meint die Spalte I, Zeilen 1 bis 6. Aufgabe 2 meint das Feld D2. Aufgabe 3 meint D7, I7 und N7.",
+            "Wenn alle Felder leuchten, seht ihr die Ziffer 1. Das ist die Lösung.",
         ),
     ),
     GameNode(

@@ -18,7 +18,7 @@ Vorbereitung für den Einsatz: siehe **[VORBEREITUNG.md](VORBEREITUNG.md)**.
 | 3 | Der digitale Lockdown (Story) | — | — |
 | 4 | Worträtsel (Wordle) | `APPLE` | — |
 | 5 | Zusammensetzen (Master-Code) | `618598592019946011616125` | — |
-| 6 | ERDING-Matrix | `1` | — |
+| 6 | ERDING-Matrix | `1` (nach 3 Mini-Aufgaben) | — |
 | 7 | Raumnummern | `00245` | Kurs-/Raumliste |
 | 8 | Shutdown (Finale) | 5 Riegel, siehe unten | — |
 
@@ -105,23 +105,36 @@ Die Fragmente werden im Rätseltext noch einmal genannt — niemand muss sie sic
 ---
 
 ### Stage 6 — ERDING-Matrix
-`erding_matrix` · **`1`** · zeigt das Raster in der App
+`erding_matrix` · **`1`** · eigene Mechanik (`ErdingMatrixGate`)
 
-Raster aus 7 Zeilen × 6 Spalten, Spaltenköpfe **E-R-D-I-N-G**. Die grün leuchtenden Felder zeichnen aus der Entfernung betrachtet die Ziffer **1**.
+Ein interaktives Raster aus 7 Zeilen × 6 Spalten. Die Spalten tragen das Schlüsselwort **E-R-D-I-N-G**, die Zeilen sind von 1 bis 7 nummeriert — ein Feld heißt also z. B. `D2`.
 
-Muster in `ERDING_PATTERN` (MainActivity.kt):
+Das Raster startet **komplett dunkel**. Drei Mini-Aufgaben nennen nacheinander die Felder, die angetippt werden müssen. Alle drei nutzen die Kernregel des Spiels (Buchstabe = Position im Alphabet); die Spaltenwerte sind **E=5, R=18, D=4, I=9, N=14, G=7**.
+
+| Aufgabe | Fragestellung | Lösung | Felder |
+| --- | --- | --- | --- |
+| 1 — Der Stamm | Welcher Buchstabe hat den Wert 9? Zeilen 1–6 in seiner Spalte. | I | `I1`–`I6` |
+| 2 — Die Fahne | 2 × 2 ergibt den Spaltenbuchstaben, die Hälfte von 4 die Zeile. | D, 2 | `D2` |
+| 3 — Der Fuß | Zeile 7, Spalten mit den Werten 4, 9 und 14. | D, I, N | `D7`, `I7`, `N7` |
+
+Zusammen ergeben die zehn Felder die Ziffer **1**:
 
 ```
-...X..
-..XX..
-...X..
-...X..
-...X..
-...X..
-..XXX.
+. . . X . .      1
+. . X X . .      2
+. . . X . .      3
+. . . X . .      4
+. . . X . .      5
+. . . X . .      6
+. . X X X .      7
+E R D I N G
 ```
 
-> Wer das Muster ändert, muss auch `acceptedAnswers` dieses Knotens anpassen.
+Erst wenn alle drei Aufgaben gelöst sind, erscheint das Eingabefeld für die Ziffer.
+
+**Falsche Felder** blitzen rot auf und zeigen „FEHLZUGRIFF", kosten aber **kein Leben** — nur eine falsche Eingabe am Ende tut das. Nach zwei Fehltipps in einer Aufgabe blendet sich automatisch ein Tipp mit den exakten Koordinaten ein.
+
+Die Aufgaben stehen in `ERDING_TASKS` (MainActivity.kt). Wer sie ändert, muss prüfen, dass die Vereinigung ihrer Felder weiterhin eine erkennbare Ziffer ergibt, und ggf. `acceptedAnswers` anpassen.
 
 ---
 
