@@ -16,3 +16,7 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+
+# Lokale Agent-Konfiguration und generierte Wissensgraph-Artefakte
+.claude/
+graphify-out/

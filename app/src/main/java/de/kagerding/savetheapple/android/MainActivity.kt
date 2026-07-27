@@ -236,8 +236,17 @@ private data class GameNode(
     val phase: GamePhase = GamePhase.Mission,
     val acceptedAnswers: Set<String> = emptySet(),
     val supportFields: List<String> = emptyList(),
+    val hints: List<String> = emptyList(),
+    val visual: NodeVisual = NodeVisual.None,
     val fullText: String = sections.joinToString("\n\n"),
 )
+
+/** Zusatzgrafik, die im Eingabemodus ueber den Eingabefeldern gezeigt wird. */
+private enum class NodeVisual {
+    None,
+    LetterValues,
+    ErdingMatrix,
+}
 
 private enum class WordleHint {
     Empty,
@@ -411,9 +420,10 @@ private class EscapeKagAppState(
 
         val remaining = lives - 1
         if (remaining <= 0) {
-            currentStage = 0
-            lives = MAX_LIVES
-            resetRunState(prefs)
+            // Der Fortschritt bleibt erhalten: Die Gruppe startet nach dem Fehlschlag
+            // beim aktuellen Raetsel mit vollen Leben neu, statt den ganzen Lauf zu
+            // verlieren. Auf einem Schulfest waere ein Totalverlust das Ende des Spiels.
+            saveLives(MAX_LIVES)
             resetSignal += 1
             navigateTo(Screen.Failure)
         } else {
@@ -434,7 +444,9 @@ private class EscapeKagAppState(
     }
 
     fun crashAfterFailure(): Nothing {
-        resetRunState(prefs)
+        // Nur die Leben auffuellen - der erreichte Spielstand bleibt gespeichert,
+        // damit die Gruppe nach dem Neustart weiterspielen kann.
+        prefs.edit().putInt(PREF_LIVES, MAX_LIVES).apply()
         throw IllegalStateException("KAG security lockout: all lives depleted")
     }
 
@@ -1040,6 +1052,7 @@ private fun PuzzleScreen(
     }
     var showFullText by remember(node.id, resetSignal) { mutableStateOf(false) }
     var feedback by remember(node.id, resetSignal) { mutableStateOf<String?>(null) }
+    var revealedHints by remember(node.id, resetSignal) { mutableStateOf(0) }
 
     val currentText = node.sections.getOrNull(sectionIndex).orEmpty()
     val phase = node.phase
@@ -1137,6 +1150,17 @@ private fun PuzzleScreen(
                 ) {
                     StreamingStatus(phase.inputLine)
                     Spacer(Modifier.height(14.dp))
+                    when (node.visual) {
+                        NodeVisual.ErdingMatrix -> {
+                            ErdingMatrix()
+                            Spacer(Modifier.height(14.dp))
+                        }
+                        NodeVisual.LetterValues -> {
+                            LetterValueTable()
+                            Spacer(Modifier.height(14.dp))
+                        }
+                        NodeVisual.None -> Unit
+                    }
                     if (node.id == WORDLE_NODE_ID) {
                         WordleGate(
                             lives = lives,
@@ -1184,6 +1208,25 @@ private fun PuzzleScreen(
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center,
                                 ),
+                            )
+                        }
+                    }
+                    if (node.hints.isNotEmpty()) {
+                        Spacer(Modifier.height(16.dp))
+                        HintPanel(hints = node.hints, revealed = revealedHints)
+                        if (revealedHints > 0) {
+                            Spacer(Modifier.height(10.dp))
+                        }
+                        if (revealedHints < node.hints.size) {
+                            val lastStep = revealedHints == node.hints.lastIndex
+                            HackerButton(
+                                text = if (lastStep) {
+                                    "Lösung zeigen (spicken)"
+                                } else {
+                                    "Hinweis ${revealedHints + 1} von ${node.hints.size}"
+                                },
+                                accent = if (lastStep) DangerRed else WarmAmber,
+                                onClick = { revealedHints += 1 },
                             )
                         }
                     }
@@ -1593,6 +1636,169 @@ private fun evaluateWordleGuess(guess: String, target: String): List<WordleHint>
     }
 
     return result
+}
+
+/** Spaltenkoepfe der ERDING-Matrix - das Schluesselwort des Raetsels. */
+private val ERDING_COLUMNS = listOf('E', 'R', 'D', 'I', 'N', 'G')
+
+/**
+ * Leuchtmuster der ERDING-Matrix: 7 Zeilen mal 6 Spalten.
+ * Die markierten Felder zeichnen die Ziffer 1 - das ist die Loesung.
+ * Wer das Muster aendert, muss auch acceptedAnswers des Knotens "erding_matrix" anpassen.
+ */
+private val ERDING_PATTERN = listOf(
+    "...X..",
+    "..XX..",
+    "...X..",
+    "...X..",
+    "...X..",
+    "...X..",
+    "..XXX.",
+)
+
+@Composable
+private fun ErdingMatrix() {
+    TerminalPanel {
+        Text(
+            text = "ERDING-MATRIX // Raster 7 x 6",
+            color = NeonCyan,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(Modifier.width(20.dp))
+            ERDING_COLUMNS.forEach { letter ->
+                Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = letter.toString(),
+                        color = WarmAmber,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 14.sp,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(5.dp))
+        ERDING_PATTERN.forEachIndexed { rowIndex, row ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.width(20.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "${rowIndex + 1}",
+                        color = TextSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                    )
+                }
+                row.forEach { cell ->
+                    val lit = cell == 'X'
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .background(
+                                if (lit) NeonGreen.copy(alpha = 0.85f) else PanelBlack,
+                                RoundedCornerShape(4.dp),
+                            )
+                            .border(
+                                1.dp,
+                                if (lit) NeonGreen else NeonCyan.copy(alpha = 0.28f),
+                                RoundedCornerShape(4.dp),
+                            ),
+                    )
+                }
+            }
+            Spacer(Modifier.height(5.dp))
+        }
+        Text(
+            text = "Haltet das Tablet ein Stueck weiter weg. Die leuchtenden Felder ergeben eine Zahl.",
+            color = TextSecondary,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+        )
+    }
+}
+
+@Composable
+private fun LetterValueTable() {
+    TerminalPanel {
+        Text(
+            text = "BUCHSTABEN-TABELLE // A=1 bis Z=26",
+            color = NeonCyan,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        ('A'..'Z').toList().chunked(6).forEach { chunk ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                chunk.forEach { letter ->
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .border(1.dp, NeonCyan.copy(alpha = 0.32f), RoundedCornerShape(4.dp))
+                            .padding(vertical = 5.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = letter.toString(),
+                            color = WarmAmber,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 13.sp,
+                        )
+                        Text(
+                            text = "${letter - 'A' + 1}",
+                            color = TextPrimary,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
+                repeat(6 - chunk.size) { Spacer(Modifier.weight(1f)) }
+            }
+            Spacer(Modifier.height(5.dp))
+        }
+    }
+}
+
+@Composable
+private fun HintPanel(hints: List<String>, revealed: Int) {
+    if (revealed <= 0 || hints.isEmpty()) return
+    TerminalPanel {
+        hints.take(revealed).forEachIndexed { index, hint ->
+            if (index > 0) {
+                Spacer(Modifier.height(11.dp))
+            }
+            val isSolution = index == hints.lastIndex
+            Text(
+                text = if (isSolution) "LOESUNG" else "HINWEIS ${index + 1}",
+                color = if (isSolution) DangerRed else WarmAmber,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Black,
+                fontSize = 11.sp,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = hint,
+                color = TextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+            )
+        }
+    }
 }
 
 @Composable
@@ -2412,7 +2618,7 @@ private val gameNodes = listOf(
             "Diese Schlüssel wurden über die gesamte Schule verteilt und hinter kniffligen Rätseln versteckt - wer sie finden will, muss Mut, Köpfchen und Teamgeist beweisen.",
             "Die Schule wird zu deinem Spielfeld. Jeder Gang, jedes Klassenzimmer könnte einen Hinweis bergen.",
             "Doch Vorsicht: Der Hacker beobachtet jeden deiner Schritte und wird alles tun, um dich aufzuhalten.",
-            "Die Uhr tickt. Das Schicksal des KAG liegt in deinen Händen. Bist du bereit, das Abenteuer zu bestehen?",
+            "Die Uhr tickt. Das Schicksal des KAG liegt in euren Händen. Seid ihr bereit?",
         ),
     ),
     GameNode(
@@ -2421,42 +2627,52 @@ private val gameNodes = listOf(
         overline = "Schlüssel 00 // Training",
         phase = GamePhase.Tutorial,
         sections = listOf(
-            "Tipp: Buchstabenwert von Ja=10+1",
-            "Die gesuchte Zahl ergibt sich durch das Hintereinander schreiben der herausgefundenen Zahlenwerte.",
-            "Zahlenwert eins ergibt sich aus der Anzahl der Bäume, die sich vor den Musikräumen befinden.",
-            "Der zweite Zahlenwert ergibt sich aus dem Buchstabenwert von KAG.",
+            "Das hier ist das Training. Hier könnt ihr in Ruhe üben, wie die Codes funktionieren.",
+            "Regel: Jeder Buchstabe hat einen Zahlenwert. Der Wert ist einfach seine Position im Alphabet. A=1, B=2, C=3 und so weiter bis Z=26. Beispiel: Das Wort \"Ja\" ergibt J=10 plus a=1, also 11.",
+            "Aufgabe 1: Zählt die Bäume, die vor den Musikräumen stehen. Das ist eure erste Zahl.",
+            "Aufgabe 2: Rechnet den Buchstabenwert von K, A und G aus und addiert die drei Werte. Das ist eure zweite Zahl.",
+            "Zum Schluss schreibt ihr die beiden Zahlen einfach hintereinander - nicht addieren! Aus 7 und 25 würde zum Beispiel 725 werden.",
         ),
         acceptedAnswers = setOf("419"),
+        visual = NodeVisual.LetterValues,
+        hints = listOf(
+            "Die Buchstaben-Tabelle über dem Eingabefeld hilft euch. Sucht dort K, A und G.",
+            "K=11, A=1, G=7. Addiert: 11 + 1 + 7 = 19. Das ist eure zweite Zahl.",
+            "Vor den Musikräumen stehen 4 Bäume. Schreibt 4 und 19 hintereinander: 419.",
+        ),
     ),
     GameNode(
         id = "kag_formula",
         title = "Der erste Code",
         overline = "Kapitel 1 // KAG-Gleichung",
         sections = listOf(
-            "Formel für den Code: (K*A*G)+X",
-            "Der erste Code ist gut verschlüsselt!",
-            "Hinweis I - Die Früchte des Namensgebers: Unser Namensgeber Korbinian Aigner, auch Apfelpfarrer genannt, war ein begeisterter Pomologe.",
-            "Zeit seines Lebens malte er rund 1000 originalgetreu Sortenbilder. Vor dem Büro der Schulleitung sind einige dieser Bilder abgebildet. Die Anzahl dieser Bilder ist K.",
-            "Hinweis II - Wege zum Wissen: Hoch über den Fluren verbinden sie zwei Seiten. Jede von ihnen trägt ihre eigene Farbe.",
-            "Wie viele unterschiedliche Brücken könnt ihr entdecken? Diese Zahl ist A.",
-            "Hinweis III - Der Anfang der Geschichte: Jede Schule hat ein Gründungsjahr. Findet heraus, wann unsere Geschichte begann.",
-            "Ihr braucht nicht das ganze Jahr - nur die letzte Ziffer. Diese Zahl ist G.",
-            "Hinweis IV - Der Anruf nach Erding: Würdet ihr die Schule anrufen, welche Zahlen würdet ihr vor der eigentlichen Telefonnummer wählen? Diese Zahl ist X.",
-            "Setze nun die Zahlenwerte in die folgende Formel ein: (K*A*G)+X.",
+            "Achtung, das ist wichtig: In diesem Rätsel sind K, A, G und X KEINE Buchstabenwerte aus dem Training. Es sind vier Zahlen, die ihr in der Schule herausfindet.",
+            "Die Formel für den Code lautet: (K mal A mal G) plus X",
+            "K - Die Früchte des Namensgebers: Unser Namensgeber Korbinian Aigner wurde \"Apfelpfarrer\" genannt. Er war Pomologe, also ein Apfelkundler, und malte sein Leben lang hunderte genaue Bilder von Apfelsorten.",
+            "Vor dem Büro der Schulleitung hängen einige dieser Bilder. Zählt sie. Diese Anzahl ist K.",
+            "A - Wege zum Wissen: Hoch über den Fluren verbinden sie zwei Seiten. Jede von ihnen trägt ihre eigene Farbe. Wie viele unterschiedliche Brücken findet ihr? Diese Anzahl ist A.",
+            "G - Der Anfang der Geschichte: Findet heraus, in welchem Jahr unsere Schule gegründet wurde. Ihr braucht nicht das ganze Jahr, sondern nur die letzte Ziffer davon. Diese Ziffer ist G.",
+            "X - Der Anruf nach Erding: Ihr wollt in der Schule anrufen. Welche Ziffern wählt ihr vor der eigentlichen Telefonnummer? Das ist die Vorwahl - und die ist X. Die Null ganz am Anfang lasst ihr dabei weg.",
+            "Setzt jetzt alle vier Zahlen in die Formel ein. Rechnet zuerst die Klammer aus, also K mal A mal G. Danach addiert ihr X dazu.",
         ),
         acceptedAnswers = setOf("8202"),
         supportFields = listOf("K", "A", "G", "X"),
+        hints = listOf(
+            "Reihenfolge beim Rechnen: zuerst die Klammer (K mal A mal G), erst danach plus X.",
+            "X ist die Vorwahl von Erding, also 8122 (ohne die führende Null). K mal A mal G ergibt zusammen 80.",
+            "Die Lösung ist 8202, denn 80 + 8122 = 8202.",
+        ),
         fullText = """
-Formel für den Code: (K*A*G)+X
+Formel für den Code: (K mal A mal G) plus X
 
-Der erste Code ist gut verschlüsselt!
+Wichtig: K, A, G und X sind hier KEINE Buchstabenwerte, sondern vier Zahlen aus der Schule.
 
-K = Anzahl der Sortenbilder vor dem Büro der Schulleitung.
-A = Anzahl der unterschiedlichen farblichen Brücken/Fachgänge.
-G = letzte Ziffer des Gründungsjahres.
-X = Zahlen vor der eigentlichen Telefonnummer.
+K = Anzahl der Apfel-Sortenbilder vor dem Büro der Schulleitung
+A = Anzahl der unterschiedlichen farbigen Brücken (Fachgänge)
+G = letzte Ziffer des Gründungsjahres der Schule
+X = Vorwahl der Schule, ohne die führende Null
 
-Setze die vier Werte in die Formel ein und öffne damit das erste Schloss.
+Rechnet zuerst die Klammer aus, dann addiert ihr X dazu.
 """.trimIndent(),
     ),
     GameNode(
@@ -2467,8 +2683,8 @@ Setze die vier Werte in die Formel ein und öffne damit das erste Schloss.
             "Ein mysteriöser Hacker hat das Schulnetzwerk übernommen.",
             "Alle Noten sollen gelöscht werden, und die Türen des Computerraums sind elektronisch verriegelt.",
             "Ihr habt das einzige Tablet, das noch Zugriff auf das System hat.",
-            "Der Master-Key wurde in physische Rätsel zerlegt, damit kein Hacker ihn finden kann.",
-            "Es gibt 5 Rätsel. Findet jedes Codefragment und setzt am Ende alles zusammen.",
+            "Der Master-Key wurde in kleine Teile zerlegt und in der Schule versteckt, damit der Hacker ihn nicht findet.",
+            "Vor euch liegen vier Rätsel. Jedes liefert euch ein Codefragment. Danach setzt ihr die vier Fragmente zu einem einzigen langen Code zusammen.",
         ),
     ),
     GameNode(
@@ -2476,129 +2692,199 @@ Setze die vier Werte in die Formel ein und öffne damit das erste Schloss.
         title = "Der Bücher-Check",
         overline = "Rätsel 1 // Bibliothek",
         sections = listOf(
-            "An der Tafel steht: Die Antwort liegt zwischen den Seiten der Wissensträger.",
-            "Ein Zettel im ersten Fachbuch im Regal enthält Koordinaten.",
-            "Folgt den Koordinaten: Seite 42, Zeile 5, Wort 3.",
-            "Gebt das gefundene Wort als Codefragment ein.",
+            "An der Tafel steht: \"Die Antwort liegt zwischen den Seiten der Wissensträger.\"",
+            "Sucht im Regal das erste Fachbuch. Darin steckt ein Zettel mit drei Zahlen.",
+            "Die drei Zahlen sind Koordinaten: Die erste ist die Seite, die zweite die Zeile, die dritte das Wort in dieser Zeile.",
+            "Schlagt die Seite auf, zählt die Zeilen von oben nach unten und dann die Wörter in dieser Zeile. Gebt das gefundene Wort ein.",
         ),
         acceptedAnswers = setOf("FREIHEIT"),
+        hints = listOf(
+            "Der Zettel steckt im ersten Fachbuch im Regal. Ohne ihn kommt ihr nicht weiter - fragt notfalls die Aufsicht.",
+            "Auf dem Zettel steht: Seite 42, Zeile 5, Wort 3.",
+            "Das gesuchte Wort ist FREIHEIT.",
+        ),
     ),
     GameNode(
         id = "shadow_riddle",
         title = "Das Schatten-Rätsel",
         overline = "Rätsel 2 // Fenster",
         sections = listOf(
-            "Ein Zettel am Fenster zeigt nur wirre schwarze Balken.",
-            "Erst wenn man ihn gegen das Licht hält, ergibt sich eine Zahl.",
-            "Diese Zahl ist die Kombination für das Vorhängeschloss an der Tasche.",
-            "Lest die Schatten korrekt und gebt die Zahl ein.",
+            "Am Fenster hängt ein Zettel. Darauf sind nur wirre schwarze Balken zu sehen.",
+            "Haltet den Zettel gegen das Licht. Dann schieben sich die Balken übereinander und ergeben Ziffern.",
+            "Lest die vierstellige Zahl ab und gebt sie ein. Sie ist außerdem die Kombination für das Vorhängeschloss an der Tasche.",
         ),
         acceptedAnswers = setOf("1994"),
+        hints = listOf(
+            "Haltet den Zettel wirklich gegen eine Lichtquelle: ans Fenster oder eine Handy-Taschenlampe von hinten.",
+            "Gesucht ist eine vierstellige Jahreszahl aus den 1990er-Jahren.",
+            "Die Lösung ist 1994.",
+        ),
     ),
     GameNode(
         id = "mirror_code",
         title = "Der Spiegel-Code",
         overline = "Rätsel 3 // Spiegel",
         sections = listOf(
-            "In der Tasche liegt ein kleiner Handspiegel und ein Blatt mit Spiegelschrift.",
-            "Der Schlüssel ist die Summe der Stühle im Raum multipliziert mit 2.",
-            "Nach dem Zählen und Rechnen gibt die Gruppe die Zahl in das Tablet ein.",
-            "Gebt das Ergebnis der Rechnung als Codefragment ein.",
+            "In der Tasche liegen ein kleiner Handspiegel und ein Blatt mit Spiegelschrift.",
+            "Haltet das Blatt vor den Spiegel. Erst dann könnt ihr lesen, was ihr rechnen müsst.",
+            "Dort steht: Zählt alle Stühle im Raum und multipliziert die Anzahl mit 2.",
+            "Gebt das Ergebnis der Rechnung ein.",
         ),
         acceptedAnswers = setOf("60"),
+        hints = listOf(
+            "Ohne Spiegel ist die Schrift nicht lesbar. Ihr könnt das Blatt auch fotografieren und das Foto spiegeln.",
+            "Zählt die Stühle im Raum. Es sind 30. Rechnet dann 30 mal 2.",
+            "Die Lösung ist 60.",
+        ),
     ),
     GameNode(
         id = "wordle",
         title = "Wordle",
         overline = "Rätsel 4 // Wordle",
         sections = listOf(
-            "Das vierte Fragment kommt aus Wordle.",
-            "Das Terminal zeigt ein eigenes fünfstelliges Wortfeld.",
-            "Jeder Versuch markiert richtige Buchstaben und falsche Positionen.",
-            "Hinweis: Es hat 5 Buchstaben und passt zum Projektthema.",
+            "Das vierte Fragment steckt in einem Worträtsel.",
+            "Ihr habt sechs Versuche, ein Wort mit fünf Buchstaben zu erraten.",
+            "Nach jedem Versuch färben sich die Felder: Grün heißt richtiger Buchstabe an der richtigen Stelle. Gelb heißt richtiger Buchstabe, aber an der falschen Stelle. Grau heißt, dieser Buchstabe kommt gar nicht vor.",
+            "Wichtiger Hinweis: Das gesuchte Wort ist ENGLISCH und passt zum Apfelpfarrer.",
+        ),
+        hints = listOf(
+            "Das Wort ist auf Englisch, nicht auf Deutsch. \"APFEL\" ist also falsch.",
+            "Es ist das englische Wort für Apfel.",
+            "Die Lösung ist APPLE.",
         ),
         fullText = """
-Das vierte Fragment kommt aus Wordle.
+Das vierte Fragment steckt in einem Worträtsel.
 
-Das Terminal zeigt ein eigenes fünfstelliges Wortfeld. Das Feld zeigt:
-grün = richtiger Buchstabe an richtiger Stelle
-gelb = richtiger Buchstabe an falscher Stelle
-grau = Buchstabe kommt nicht vor
+Ihr habt sechs Versuche für ein Wort mit fünf Buchstaben. Die Farben bedeuten:
+grün = richtiger Buchstabe an der richtigen Stelle
+gelb = richtiger Buchstabe, aber an der falschen Stelle
+grau = dieser Buchstabe kommt nicht vor
 
-Hinweis: Es hat 5 Buchstaben und passt zum Projektthema.
+Wichtig: Das gesuchte Wort ist ENGLISCH und passt zum Apfelpfarrer.
 """.trimIndent(),
     ),
     GameNode(
         id = "compile",
         title = "Compile",
-        overline = "Rätsel 5 // Finale Kompilierung",
+        overline = "Zusammensetzen // Master-Code",
         sections = listOf(
-            "Alle Lösungen müssen nacheinander gereiht werden.",
-            "Der finale Code ist der Entschlüsselungscode.",
-            "Zahlen werden zu Nummern: A -> 1.",
-            "Reiht die Fragmente in der gefundenen Reihenfolge und wandelt alle Buchstaben in Zahlen um.",
+            "Jetzt setzt ihr die vier Codefragmente zu einem einzigen langen Code zusammen.",
+            "Nehmt sie in genau der Reihenfolge, in der ihr sie gefunden habt: zuerst das Wort aus der Bibliothek, dann die Zahl vom Fenster, dann das Ergebnis vom Spiegel, zuletzt das englische Wort aus dem Worträtsel.",
+            "Buchstaben werden zu Zahlen: A wird zu 1, B wird zu 2, und so weiter bis Z=26. Zahlen bleiben einfach so, wie sie sind.",
+            "Schreibt alles direkt hintereinander - ohne Leerzeichen und ohne zusätzliche Nullen. Aus B wird also 2 und nicht 02.",
+            "Zur Kontrolle: Der fertige Code ist genau 24 Ziffern lang.",
         ),
         acceptedAnswers = setOf("618598592019946011616125"),
+        visual = NodeVisual.LetterValues,
+        hints = listOf(
+            "Die Reihenfolge ist: FREIHEIT, dann 1994, dann 60, dann APPLE. Nutzt die Buchstaben-Tabelle über dem Eingabefeld.",
+            "FREIHEIT wird zu 6-18-5-9-8-5-9-20, also 6185985920. APPLE wird zu 1-16-16-12-5, also 11616125. Dazwischen kommen 1994 und 60.",
+            "Die Lösung ist 618598592019946011616125.",
+        ),
     ),
     GameNode(
         id = "erding_matrix",
         title = "ERDING-Matrix",
         overline = "Raster // Matrix",
         sections = listOf(
-            "Das Koordinatensystem trägt das Schlüsselwort ERDING.",
-            "Die Buchstaben werden über ein Raster aus Zeilen und Spalten entschlüsselt.",
-            "Lest das markierte Feld und gebt das Codefragment ein.",
+            "Der Hacker hat ein Raster in das System geschoben. Oben trägt es das Schlüsselwort ERDING.",
+            "Einige Felder des Rasters leuchten grün auf.",
+            "Achtet nicht auf einzelne Felder, sondern auf das Gesamtbild: Die leuchtenden Felder zeichnen zusammen eine Ziffer.",
+            "Schaut euch das Raster von etwas weiter weg an. Welche Ziffer seht ihr? Gebt sie ein.",
         ),
         acceptedAnswers = setOf("1"),
+        visual = NodeVisual.ErdingMatrix,
+        hints = listOf(
+            "Haltet das Tablet mit ausgestrecktem Arm von euch weg oder kneift die Augen zusammen. Dann tritt das Muster hervor.",
+            "Die grünen Felder bilden einen senkrechten Strich mit einem kleinen Haken oben links und einem Fuß unten.",
+            "Es ist die Ziffer 1.",
+        ),
     ),
     GameNode(
         id = "mespace",
         title = "Psychologie-Zettel",
         overline = "Raumriddle // Psychologie",
         sections = listOf(
-            "Auf einem Zettel vor den Psychologieräumen steht ein Wort.",
-            "Der Schriftzug wirkt wie eine getarnte Systemkennung.",
-            "Gib das Wort exakt als Codefragment ein.",
+            "Vor den Psychologieräumen hängt ein Zettel mit einem einzelnen Wort darauf.",
+            "Es sieht aus wie ein ganz normales Wort, ist in Wahrheit aber eine getarnte Systemkennung.",
+            "Sucht den Zettel und gebt das Wort genau so ein, wie es dort steht.",
         ),
         acceptedAnswers = setOf("MESPACE"),
+        hints = listOf(
+            "Der Zettel hängt vor den Psychologieräumen. Schaut an Türen, Pinnwänden und Fenstern nach.",
+            "Das Wort hat sieben Buchstaben und beginnt mit ME.",
+            "Die Lösung ist MESPACE.",
+        ),
     ),
     GameNode(
         id = "room_sorting",
         title = "Raumnummern",
         overline = "Kursliste // Sortierung",
         sections = listOf(
-            "Rätsel mit vollständigen Raumnummern zu jeweiligen Kursen.",
-            "Sortiert die Raumnummern der Größe nach: links klein, rechts groß.",
-            "Nutzt die vollständige Raumnummer und hängt die Ziffern als Codefragment aneinander.",
-            "Achtet darauf, führende Nullen nicht zu verlieren.",
+            "Auf dem Zettel findet ihr eine Liste: mehrere Kurse und dazu die vollständige Raumnummer, in der sie stattfinden.",
+            "Sortiert die Raumnummern nach ihrer Größe: die kleinste zuerst, die größte zuletzt.",
+            "Schreibt dann die Ziffern aller Raumnummern in dieser Reihenfolge direkt hintereinander.",
+            "Ganz wichtig: Nullen am Anfang einer Raumnummer gehören dazu und dürfen nicht weggelassen werden.",
         ),
         acceptedAnswers = setOf("00245"),
+        hints = listOf(
+            "Sortiert zuerst vollständig, schreibt erst danach ab. Eine Raumnummer wie 002 bleibt 002 - beide Nullen zählen mit.",
+            "Der fertige Code ist fünf Ziffern lang und beginnt mit zwei Nullen.",
+            "Die Lösung ist 00245.",
+        ),
     ),
     GameNode(
         id = "cipher_training",
-        title = "Chiffrierung",
-        overline = "Methoden // Chiffren",
+        title = "Geheimschriften",
+        overline = "Archiv // Nachschlagewerk",
         phase = GamePhase.Archive,
         sections = listOf(
-            "ASCII-Code: Die Zahl wird in einen Buchstaben umgewandelt. Beispiel: 65 -> A, 72 -> H.",
-            "Caesar-Verschiebung mit Zahl: Die Zahl gibt an, wie weit ein Buchstabe verschoben wird. Beispiel: A mit Ergebnis 8 wird H.",
-            "Koordinatensystem: Die Zahl verweist auf Positionen, etwa den 8. Buchstaben eines Satzes oder ein Feld im Raster.",
-            "Morsecode: Zahl in Morse übersetzen. In der App kann das mit blinkenden Lichtern oder Terminal-Pulsen erscheinen.",
-            "QR-/Matrix-Logik: Die Zahl bestimmt ein Muster. Beispiel: 8 = 8 leuchtende Felder aktivieren.",
-            "Primzahlen/Mathe-Logik: Die Zahl muss weiterverarbeitet werden, etwa nächste Primzahl oder Quersumme.",
-            "Telefon-Tastatur-Code: Wie alte Handys. 2 = ABC, 3 = DEF, 8 = TUV. Ergebnis 8 -> U.",
+            "Archiv-Station. Hier gibt es nichts einzugeben - das ist euer Nachschlagewerk.",
+            "Die wichtigste Regel in diesem Spiel: Ein Buchstabe wird zu seiner Position im Alphabet. A=1, B=2, C=3 und so weiter bis Z=26. Mehr braucht ihr für die Rätsel nicht.",
+            "Es gibt aber noch viele andere Geheimschriften. Die folgenden kommen in diesem Spiel NICHT vor - sie sind nur zum Angeben und Weitererzählen.",
+            "Caesar-Verschiebung: Jeder Buchstabe rutscht um eine feste Zahl im Alphabet weiter. Bei Verschiebung 7 wird aus A ein H. Benannt ist sie nach Julius Caesar, der damit seine Briefe schützte.",
+            "ASCII: So speichern Computer Buchstaben - nämlich als Zahlen. Dort ist A die 65 und H die 72. Achtung: Das ist eine ganz andere Regel als unser A=1.",
+            "Morsecode: Jeder Buchstabe wird zu Punkten und Strichen. A ist kurz-lang, S ist dreimal kurz, O ist dreimal lang. SOS heißt also kurz-kurz-kurz, lang-lang-lang, kurz-kurz-kurz.",
+            "Telefon-Tastatur: Auf alten Handys teilten sich mehrere Buchstaben eine Taste. 2 = ABC, 3 = DEF, 8 = TUV. Für ein U musste man die 8 also zweimal drücken.",
+        ),
+        visual = NodeVisual.LetterValues,
+    ),
+    GameNode(
+        id = "aigner_archive",
+        title = "Der Apfelpfarrer",
+        overline = "Archiv // Korbinian Aigner",
+        phase = GamePhase.Archive,
+        sections = listOf(
+            "Unsere Schule ist nach Korbinian Aigner benannt. Das hier ist seine Geschichte.",
+            "Geboren wurde er am 11. Mai 1885 in Hohenpolding - das liegt im Landkreis Erding, also ganz in eurer Nähe. Er war das älteste von elf Kindern.",
+            "Eigentlich hätte er als ältester Sohn den Bauernhof der Familie erben sollen. Er verzichtete freiwillig darauf, weil er Priester werden wollte, und überließ den Hof seinem Bruder.",
+            "Neben seinem Beruf als Pfarrer war Aigner Pomologe. Pomologie ist die Obstkunde: die Wissenschaft, die Obstsorten genau beschreibt, benennt und unterscheidet - eine Art Lexikon für Äpfel und Birnen.",
+            "Zwischen 1912 und 1960 malte er rund 900 kleine Bilder von Apfel- und Birnensorten, etwa so groß wie Postkarten. Auf fast jedem Bild sind zwei Früchte derselben Sorte zu sehen.",
+            "Als die Nationalsozialisten an die Macht kamen, stellte Aigner sich quer. Er weigerte sich, Kinder auf den Namen Adolf zu taufen. Und als 1936 im ganzen Land auf Befehl die Kirchenglocken läuten sollten, ließ er seine Glocken einfach stumm.",
+            "1939 sagte er im Religionsunterricht offen, ein Attentat auf Hitler hätte vielleicht eine Million Menschen gerettet. Eine Lehrerin meldete ihn. Er wurde verhaftet und kam ins Konzentrationslager Dachau.",
+            "Und dort passierte etwas Erstaunliches: Auf einem schmalen Grünstreifen zwischen zwei Baracken zog Aigner heimlich aus Apfelkernen kleine Bäume und züchtete vier neue Apfelsorten. Er nannte sie trotzig KZ-1, KZ-2, KZ-3 und KZ-4.",
+            "Nur eine der vier Sorten überlebte: die KZ-3. Im Jahr 1985, zu Aigners 100. Geburtstag, bekam sie einen neuen Namen. Seitdem heißt sie Korbiniansapfel.",
+            "Im April 1945 gelang Aigner auf einem Todesmarsch die Flucht. Nonnen versteckten ihn in einem Kloster am Starnberger See. Zwei Tage später wurde Dachau befreit.",
+            "Nach dem Krieg trug er im Garten jahrzehntelang weiter seinen alten Häftlingsmantel. Als er 1966 starb, wurde sein Sarg auf seinen eigenen Wunsch mit genau diesem Mantel bedeckt.",
+            "Seine rund 900 Bilder liegen heute im Historischen Archiv der Technischen Universität München. 2012 wurden 402 davon auf der documenta in Kassel gezeigt - einer der berühmtesten Kunstausstellungen der Welt.",
         ),
     ),
     GameNode(
         id = "school_clues",
-        title = "Schulort-Archiv",
-        overline = "Archiv // Schulorte",
+        title = "Das KAG in Zahlen",
+        overline = "Archiv // Schule und Stadt",
         phase = GamePhase.Archive,
         sections = listOf(
-            "Raumzahlen als Code: Anzahl von Bäumen, Fachgänge, Apfelbilder, Trinkbrunnen, Umkleiden, Turnhallen, Räume in Chemie, Musikübungsräume und Computerraum.",
-            "Weitere Schulwerte: Gründungsdatum als Code 2004, Länge der Tartanbahn, Namensänderungsjahr 2010.",
-            "Weitere Schulfragen: Wie viele Fliesen gibt es auf dem Sportplatz? Anzahl der Stühle in einem Raum? Wie viele Punkte auf einer fehlerhaften Tafelhälfte?",
-            "Diese Archiv-Station sammelt optionale Schulhinweise für spätere Erweiterungen.",
+            "Archiv-Station. Hier sammelt das System alles, was es über eure Schule und eure Stadt weiß.",
+            "Unsere Schule wurde 2004 eröffnet - damals noch unter dem Namen Gymnasium Erding II. Am 28. Juni 2010 beschloss der Kreistag die Umbenennung nach Korbinian Aigner. Die offizielle Namensgebungsfeier fand im Februar 2011 statt.",
+            "Adresse: Sigwolfstraße 50, 85435 Erding. Die Vorwahl von Erding ist 08122 - genau die habt ihr im ersten Code gebraucht.",
+            "Im Schuljahr 2024/25 lernten hier 1211 Schülerinnen und Schüler, unterrichtet von 92 Lehrkräften.",
+            "Das KAG hat drei Ausbildungsrichtungen: das Musische Gymnasium, das Sprachliche Gymnasium und das Naturwissenschaftlich-technologische Gymnasium.",
+            "Das Schulgelände ist rund 3,3 Hektar groß. Der Pausenhof wurde nach vier Themen gestaltet: Holz, Wasser, Pflanze und Stein.",
+            "Ausgezeichnet wurde die Schule unter anderem als MINT-freundliche Schule, als Referenzschule für Medienbildung und als Umweltschule in Europa.",
+            "Jetzt zur Stadt: Erding wurde schon im Jahr 788 zum ersten Mal erwähnt - das ist über 1200 Jahre her. Die Stadtrechte bekam Erding aber erst 1228.",
+            "Der Schöne Turm ist das letzte erhaltene Stadttor der Altstadt. Gebaut wurde er 1408 und ist damit über 600 Jahre alt.",
+            "Und zum Schluss etwas Verblüffendes: Der Flughafen München liegt gar nicht in München, sondern im Erdinger Moos - also im Landkreis Erding.",
         ),
     ),
     GameNode(
@@ -2607,10 +2893,10 @@ Hinweis: Es hat 5 Buchstaben und passt zum Projektthema.
         overline = "Letztes Schloss // Shutdown",
         phase = GamePhase.Finale,
         sections = listOf(
-            "In den Codefeldern werden vorherige Rätsel als Schlüssel genutzt.",
-            "Das Wordle-Fragment entriegelt die letzte Sperre.",
-            "Der Computerraum ist wieder erreichbar.",
-            "Die Verbindung des Hackers wird getrennt.",
+            "Ihr habt alle Codefragmente gefunden und den Master-Code zusammengesetzt.",
+            "Das letzte Schloss springt auf. Der Weg zum Computerraum ist frei.",
+            "Ihr zieht das Netzwerkkabel. Die Verbindung des Hackers bricht ab.",
+            "Das KAG ist gerettet. Gut gemacht!",
         ),
     ),
 )
