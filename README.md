@@ -11,20 +11,30 @@ Android-Escape-Room-App fuer das P-Seminar Informatik App Programmierung am Korb
 - UI: Jetpack Compose
 - Release-Build: optimiert; optional signierbar ueber lokale `keystore.properties`
 
+## Lite-Variante
+
+Dieser Branch (`lite`) verzichtet auf alle Raetsel, fuer die vorher physische
+Materialien in der Schule ausgelegt werden muessen. Entfernt wurden
+Buecher-Check, Schatten-Raetsel, Spiegel-Code und Psychologie-Zettel.
+
+Die drei Codefragmente aus diesen Raetseln (`FREIHEIT`, `1994`, `60`) liefert
+jetzt die App selbst in der Lockdown-Story. Der Master-Code bleibt dadurch
+unveraendert, und die Rechenaufgabe bleibt als Raetsel erhalten.
+
+Der volle Umfang liegt auf `main`.
+
 ## Loesungen
 
 | Abschnitt | Eingabe |
 | --- | --- |
 | Tutorial | `419` |
 | KAG-Gleichung | `8202` |
-| Buecher-Check | `FREIHEIT` |
-| Schatten-Raetsel | `1994` |
-| Spiegel-Code | `60` |
 | Wordle | `APPLE` |
 | Compile | `618598592019946011616125` |
 | ERDING-Matrix | `1` |
-| Psychologie-Zettel | `MESPACE` |
 | Raumnummern | `00245` |
+
+Von der App vorgegeben (keine Eingabe noetig): `FREIHEIT`, `1994`, `60`.
 
 ## Production-APK exportieren
 
