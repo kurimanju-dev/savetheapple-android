@@ -149,7 +149,7 @@ Ihre Codefragmente `FREIHEIT`, `1994` und `60` gibt die App jetzt selbst in der 
 - **Altersempfehlung:** ab 10 Jahren
 - **Aufsicht:** Eine Person genügt; sie sollte auf den Hinweis-Knopf hinweisen können
 
-### Reihenfolge im Spiel (12 Stationen)
+### Reihenfolge im Spiel (9 Stationen)
 
 | # | Station | Ort | Eingabe |
 | --- | --- | --- | --- |
@@ -161,12 +161,27 @@ Ihre Codefragmente `FREIHEIT`, `1994` und `60` gibt die App jetzt selbst in der 
 | 6 | Zusammensetzen | überall | `618598592019946011616125` |
 | 7 | ERDING-Matrix | überall | `1` |
 | 8 | Raumnummern | bei der Liste | `00245` |
-| 9 | Geheimschriften (Archiv) | — | — |
-| 10 | Der Apfelpfarrer (Archiv) | — | — |
-| 11 | Das KAG in Zahlen (Archiv) | — | — |
-| 12 | Finale | — | — |
+| 9 | Shutdown (Finale) | überall | 5 Riegel, siehe unten |
 
 > Nur die Stationen 2, 3 und 8 sind an einen Ort gebunden. Alles andere können die Gruppen überall lösen — praktisch, wenn es an einer Stelle staut.
+
+### Das Finale
+
+Das Finale fragt fünf Codes ab, die die Gruppe schon geknackt hat — sie brauchen also ihre Notizen:
+
+| Riegel | Antwort |
+| --- | --- |
+| 1 | `419` |
+| 2 | `8202` |
+| 3 | `APPLE` |
+| 4 | `00245` |
+| 5 | `6125` (die letzten vier Ziffern des Master-Codes) |
+
+Danach muss ein roter Schalter **1,6 Sekunden gedrückt gehalten** werden. Nach zwei Fehlversuchen an einem Riegel erscheint automatisch ein Tipp.
+
+### Das Handbuch
+
+Die Archiv-Inhalte (Geheimschriften mit Buchstaben-Tabelle, Der Apfelpfarrer, Das KAG in Zahlen) sind **jederzeit** erreichbar: im Hauptmenü über „Handbuch", im Spiel über den `?`-Knopf oben links. Der Spielstand geht dabei nicht verloren. Weist die Gruppen darauf hin — besonders die Buchstaben-Tabelle hilft beim Master-Code.
 
 ### Für die Aufsicht: Notfall-Werkzeuge
 
@@ -193,9 +208,10 @@ Einmal komplett durchspielen. Rechnet 10 Minuten ein.
 - [ ] Master-Code: `618598592019946011616125` wird angenommen
 - [ ] ERDING-Matrix: Die **1** ist auf dem Display gut erkennbar (auch bei Sonnenlicht draußen!)
 - [ ] Raumnummern: Liste liegt aus, `00245` wird angenommen
+- [ ] Handbuch über den `?`-Knopf mitten im Rätsel geöffnet — Spielstand bleibt erhalten
 - [ ] Hinweis-Knopf bei mindestens einem Rätsel ausprobiert
 - [ ] Drei falsche Eingaben absichtlich: Fortschritt bleibt erhalten
-- [ ] Kompletter Durchlauf bis zum Finale
+- [ ] Finale: alle fünf Riegel geöffnet, Schalter gehalten, Abspann erscheint
 
 **Der Master-Code zum Nachrechnen:**
 
@@ -212,8 +228,6 @@ zusammen → 618598592019946011616125   (24 Ziffern)
 
 ## Teil 5 — Bekannte Einschränkungen
 
-- **Das Finale ist noch nicht ausgebaut.** Es zeigt nur einen Abschlusstext und einen „Weiter"-Knopf.
-- **Nach dem Finale landet man im Hauptmenü**, nicht im Abspann. Der Abspann ist über das Menü erreichbar.
 - **Der Absturz-Knopf auf dem Fehlschlag-Bildschirm** beendet die App absichtlich („der Hacker schlägt zurück"). Der Spielstand bleibt erhalten — nach dem Neustart geht es beim gleichen Rätsel weiter. Wer das nicht will, weist die Aufsicht an, den Knopf nicht anzutippen.
 - **Die Zählwerte K und A sind nicht verifiziert.** Gründungsjahr (2004) und Vorwahl (08122) sind recherchiert und sicher; Bilder und Brücken muss jemand vor Ort nachzählen.
 

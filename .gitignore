@@ -20,3 +20,6 @@ keystore.properties
 # Lokale Agent-Konfiguration und generierte Wissensgraph-Artefakte
 .claude/
 graphify-out/
+
+# Build-Ordner aller Module (nicht nur des Wurzelprojekts)
+build/

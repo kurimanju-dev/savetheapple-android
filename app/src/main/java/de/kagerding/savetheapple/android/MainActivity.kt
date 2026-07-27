@@ -33,6 +33,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +44,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -118,6 +121,7 @@ private const val DEV_UNLOCK_TAPS = 5
 private const val WORDLE_NODE_ID = "wordle"
 private const val WORDLE_TARGET = "APPLE"
 private const val WORDLE_MAX_ATTEMPTS = 6
+private const val FINALE_NODE_ID = "finale"
 private val DEV_TOOLS_AVAILABLE = BuildConfig.DEBUG
 
 private val LocalHapticsEnabled = staticCompositionLocalOf { true }
@@ -217,6 +221,7 @@ private enum class Screen {
     Game,
     Credits,
     Settings,
+    Manual,
     Failure,
 }
 
@@ -330,6 +335,10 @@ private class EscapeKagAppState(
     var resetSignal by mutableStateOf(0)
         private set
 
+    /** Bildschirm, zu dem das Handbuch zurueckkehrt - damit ein laufendes Raetsel nicht verloren geht. */
+    var manualReturn by mutableStateOf(Screen.Menu)
+        private set
+
     val canNavigateBack: Boolean
         get() = screen != Screen.Menu &&
             screen != Screen.Splash &&
@@ -406,7 +415,8 @@ private class EscapeKagAppState(
             saveStage(currentStage + 1)
             resetSignal += 1
         } else {
-            navigateTo(Screen.Menu)
+            // Durchgespielt: Der Abspann ist die Belohnung, nicht das Hauptmenue.
+            navigateTo(Screen.Credits)
         }
     }
 
@@ -433,6 +443,15 @@ private class EscapeKagAppState(
 
     fun restoreLives() {
         saveLives(MAX_LIVES)
+    }
+
+    fun openManual() {
+        manualReturn = if (screen == Screen.Game) Screen.Game else Screen.Menu
+        navigateTo(Screen.Manual)
+    }
+
+    fun closeManual() {
+        navigateTo(manualReturn)
     }
 
     fun updateInvincible(enabled: Boolean) {
@@ -493,7 +512,11 @@ private fun EscapeKagApp() {
     }
 
     BackHandler(enabled = appState.canNavigateBack) {
-        appState.navigateTo(Screen.Menu)
+        if (appState.screen == Screen.Manual) {
+            appState.closeManual()
+        } else {
+            appState.navigateTo(Screen.Menu)
+        }
     }
 
     CompositionLocalProvider(LocalHapticsEnabled provides appState.hapticsEnabled) {
@@ -514,7 +537,8 @@ private fun Screen.backgroundForStage(stage: Int): Int {
         Screen.Settings,
         Screen.Credits,
         Screen.Failure -> R.drawable.secondback
-        Screen.Menu -> R.drawable.kagescape
+        Screen.Menu,
+        Screen.Manual -> R.drawable.kagescape
         Screen.Game -> gameNodes[stage.coerceIn(0, gameNodes.lastIndex)].phase.background
     }
 }
@@ -594,6 +618,7 @@ private fun AppRouteContent(appState: EscapeKagAppState) {
                     onStart = appState::startGameFromMenu,
                     onSettings = { appState.navigateTo(Screen.Settings) },
                     onCredits = { appState.navigateTo(Screen.Credits) },
+                    onManual = appState::openManual,
                     onDeveloperUnlock = if (DEV_TOOLS_AVAILABLE) appState::unlockDeveloperMode else null,
                 )
                 Screen.GameStartIntro -> GameStartIntroScreen(
@@ -612,9 +637,13 @@ private fun AppRouteContent(appState: EscapeKagAppState) {
                     onWrong = appState::wrongAnswer,
                     onRestoreLives = appState::restoreLives,
                     onToggleInvincible = appState::updateInvincible,
+                    onManual = appState::openManual,
                 )
                 Screen.Credits -> CreditsScreen(
                     onBack = { appState.navigateTo(Screen.Menu) },
+                )
+                Screen.Manual -> ManualScreen(
+                    onBack = appState::closeManual,
                 )
                 Screen.Settings -> SettingsScreen(
                     isMuted = appState.isMuted,
@@ -639,6 +668,7 @@ private val Screen.routeOrder: Int
         Screen.Menu -> 1
         Screen.Settings -> 2
         Screen.Credits -> 2
+        Screen.Manual -> 2
         Screen.GameStartIntro -> 3
         Screen.Game -> 4
         Screen.Failure -> 5
@@ -906,6 +936,7 @@ private fun MenuScreen(
     onStart: () -> Unit,
     onSettings: () -> Unit,
     onCredits: () -> Unit,
+    onManual: () -> Unit,
     onDeveloperUnlock: (() -> Unit)?,
 ) {
     val startLabel = if (progress == 0) "Spiel starten" else "Fortsetzen"
@@ -968,6 +999,11 @@ private fun MenuScreen(
                 large = true,
                 onClick = onStart,
             )
+            HackerButton(
+                text = "Handbuch",
+                accent = WarmAmber,
+                onClick = onManual,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 HackerButton(
                     text = "Optionen",
@@ -1001,6 +1037,7 @@ private fun GameDeckScreen(
     onWrong: () -> Unit,
     onRestoreLives: () -> Unit,
     onToggleInvincible: (Boolean) -> Unit,
+    onManual: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         PhaseAmbientOverlay(node.phase)
@@ -1023,6 +1060,7 @@ private fun GameDeckScreen(
                 onWrong = onWrong,
                 onRestoreLives = onRestoreLives,
                 onToggleInvincible = onToggleInvincible,
+                onManual = onManual,
             )
         }
     }
@@ -1042,6 +1080,7 @@ private fun PuzzleScreen(
     onWrong: () -> Unit,
     onRestoreLives: () -> Unit,
     onToggleInvincible: (Boolean) -> Unit,
+    onManual: () -> Unit,
 ) {
     var sectionIndex by remember(node.id, resetSignal) { mutableStateOf(0) }
     var visibleCount by remember(node.id, sectionIndex, resetSignal) { mutableStateOf(0) }
@@ -1091,6 +1130,7 @@ private fun PuzzleScreen(
             overline = "${phase.label} // ${stage + 1}/$totalStages",
             lives = lives,
             onBack = onBack,
+            onManual = onManual,
         )
         Spacer(Modifier.height(10.dp))
         PhaseBanner(
@@ -1167,6 +1207,11 @@ private fun PuzzleScreen(
                             onSolved = onSolved,
                             onWrong = onWrong,
                         )
+                    } else if (node.id == FINALE_NODE_ID) {
+                        FinaleGate(
+                            onSolved = onSolved,
+                            onWrong = onWrong,
+                        )
                     } else {
                         if (node.supportFields.isNotEmpty()) {
                             SupportInputs(
@@ -1230,12 +1275,16 @@ private fun PuzzleScreen(
                             )
                         }
                     }
-                    Spacer(Modifier.height(16.dp))
-                    HackerButton(
-                        text = if (showFullText) "Text schließen" else "Gesamten Text öffnen",
-                        accent = WarmAmber,
-                        onClick = { showFullText = !showFullText },
-                    )
+                    // Im Finale ist der Volltext nur die Einleitung - er hilft dort nicht
+                    // weiter und wuerde der Shutdown-Sequenz nur Platz wegnehmen.
+                    if (node.id != FINALE_NODE_ID) {
+                        Spacer(Modifier.height(16.dp))
+                        HackerButton(
+                            text = if (showFullText) "Text schließen" else "Gesamten Text öffnen",
+                            accent = WarmAmber,
+                            onClick = { showFullText = !showFullText },
+                        )
+                    }
                     if (showFullText) {
                         Spacer(Modifier.height(14.dp))
                         TerminalPanel {
@@ -1306,6 +1355,135 @@ private fun SettingsScreen(
         )
         Spacer(Modifier.weight(1f))
         StreamingStatus("settings saved locally // persistent state armed")
+    }
+}
+
+@Composable
+private fun ManualScreen(onBack: () -> Unit) {
+    var openIndex by remember { mutableStateOf<Int?>(null) }
+    val current = openIndex?.let { manualNodes.getOrNull(it) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(18.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            HackerButton(
+                text = "<",
+                accent = NeonCyan,
+                compact = true,
+                onClick = { if (current != null) openIndex = null else onBack() },
+            )
+            Text(
+                text = current?.overline ?: "HANDBUCH // jederzeit verfügbar",
+                color = WarmAmber,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        GlitchText(
+            text = current?.title ?: "Handbuch",
+            style = TerminalTextStyle.copy(
+                fontSize = 27.sp,
+                fontWeight = FontWeight.Black,
+            ),
+        )
+        Spacer(Modifier.height(12.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            if (current == null) {
+                Text(
+                    text = "Hier könnt ihr jederzeit nachschlagen - auch mitten in einem Rätsel. Euer Fortschritt geht dabei nicht verloren.",
+                    color = TextSecondary,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                )
+                Spacer(Modifier.height(14.dp))
+                manualNodes.forEachIndexed { index, entry ->
+                    ManualEntryCard(entry = entry, onClick = { openIndex = index })
+                    Spacer(Modifier.height(10.dp))
+                }
+            } else {
+                when (current.visual) {
+                    NodeVisual.LetterValues -> {
+                        LetterValueTable()
+                        Spacer(Modifier.height(14.dp))
+                    }
+                    NodeVisual.ErdingMatrix -> {
+                        ErdingMatrix()
+                        Spacer(Modifier.height(14.dp))
+                    }
+                    NodeVisual.None -> Unit
+                }
+                TerminalPanel {
+                    current.sections.forEachIndexed { index, section ->
+                        if (index > 0) {
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        Text(
+                            text = section,
+                            color = TextPrimary,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+        StreamingStatus("handbuch // read-only cache")
+    }
+}
+
+@Composable
+private fun ManualEntryCard(entry: GameNode, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .border(1.dp, NeonCyan.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+            .background(PanelBlack, RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(14.dp),
+    ) {
+        Text(
+            text = entry.overline,
+            color = NeonCyan,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            maxLines = 1,
+        )
+        Spacer(Modifier.height(5.dp))
+        Text(
+            text = entry.title,
+            color = TextPrimary,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 17.sp,
+        )
+        Spacer(Modifier.height(5.dp))
+        Text(
+            text = entry.sections.firstOrNull().orEmpty(),
+            color = TextSecondary,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            maxLines = 2,
+        )
     }
 }
 
@@ -1738,37 +1916,35 @@ private fun LetterValueTable() {
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(10.dp))
+        // Bewusst einzeilige Zellen: Zweizeilig war die Tabelle so hoch, dass der
+        // Hinweis-Knopf darunter aus dem Bild rutschte - und ein Hinweis, den man
+        // erst suchen muss, hilft einer festsitzenden Gruppe nicht.
         ('A'..'Z').toList().chunked(6).forEach { chunk ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 chunk.forEach { letter ->
-                    Column(
+                    Box(
                         modifier = Modifier
                             .weight(1f)
                             .border(1.dp, NeonCyan.copy(alpha = 0.32f), RoundedCornerShape(4.dp))
-                            .padding(vertical = 5.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                            .padding(vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = letter.toString(),
-                            color = WarmAmber,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 13.sp,
-                        )
-                        Text(
-                            text = "${letter - 'A' + 1}",
+                            text = "$letter=${letter - 'A' + 1}",
                             color = TextPrimary,
                             fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
+                            maxLines = 1,
                         )
                     }
                 }
                 repeat(6 - chunk.size) { Spacer(Modifier.weight(1f)) }
             }
-            Spacer(Modifier.height(5.dp))
+            Spacer(Modifier.height(4.dp))
         }
     }
 }
@@ -1798,6 +1974,346 @@ private fun HintPanel(hints: List<String>, revealed: Int) {
                 lineHeight = 19.sp,
             )
         }
+    }
+}
+
+/**
+ * Ein Riegel der Notabschaltung. Jeder greift einen Code auf, den die Gruppe
+ * unterwegs schon geknackt hat - das Finale baut damit auf allen Raetseln auf.
+ * Die Antworten stehen bewusst hier und nicht in gameNodes, weil das Finale
+ * eine eigene Mechanik hat und nicht ueber acceptedAnswers laeuft.
+ */
+private data class FinaleLock(
+    val label: String,
+    val prompt: String,
+    val answer: String,
+    val hint: String,
+)
+
+private val FINALE_LOCKS = listOf(
+    FinaleLock(
+        label = "RIEGEL 1 // TRAINING",
+        prompt = "Der erste Riegel will den Code aus eurem Training: die Bäume und der Buchstabenwert, hintereinandergeschrieben.",
+        answer = "419",
+        hint = "Es war die dreistellige Zahl aus dem Tutorial - 4 und 19.",
+    ),
+    FinaleLock(
+        label = "RIEGEL 2 // KAG-GLEICHUNG",
+        prompt = "Der zweite Riegel prüft das Ergebnis eurer Formel: (K mal A mal G) plus X.",
+        answer = "8202",
+        hint = "Es war die vierstellige Zahl aus dem ersten Code.",
+    ),
+    FinaleLock(
+        label = "RIEGEL 3 // FRAGMENT 4",
+        prompt = "Der dritte Riegel verlangt das englische Wort, das ihr im Worträtsel geknackt habt.",
+        answer = "APPLE",
+        hint = "Fünf Buchstaben, englisch, passt zum Apfelpfarrer.",
+    ),
+    FinaleLock(
+        label = "RIEGEL 4 // RAUMLISTE",
+        prompt = "Der vierte Riegel will den Code aus den sortierten Raumnummern.",
+        answer = "00245",
+        hint = "Fünf Ziffern - und er beginnt mit zwei Nullen.",
+    ),
+    FinaleLock(
+        label = "RIEGEL 5 // MASTER-KEY",
+        prompt = "Der letzte Riegel prüft den Master-Code selbst. Gebt seine letzten vier Ziffern ein.",
+        answer = "6125",
+        hint = "Der Master-Code endet auf 11616125. Davon die letzten vier Ziffern.",
+    ),
+)
+
+private val FINALE_VICTORY_LINES = listOf(
+    "> notabschaltung ausgeloest",
+    "> serververbindung getrennt",
+    "> download abgebrochen bei 96%",
+    "> noten wiederhergestellt",
+    "> fremdzugriff blockiert",
+    "> netzwerk des KAG gesichert",
+)
+
+private enum class FinalePhase { Locks, Shutdown, Victory }
+
+/** Wie lange der Notaus-Schalter gehalten werden muss, bzw. wie schnell er zurueckfaellt. */
+private const val HOLD_TO_SHUTDOWN_SECONDS = 1.6f
+private const val HOLD_RELEASE_SECONDS = 0.45f
+
+@Composable
+private fun FinaleGate(
+    onSolved: () -> Unit,
+    onWrong: () -> Unit,
+) {
+    var lockIndex by remember { mutableStateOf(0) }
+    var input by remember { mutableStateOf("") }
+    var attempts by remember { mutableStateOf(0) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var phase by remember { mutableStateOf(FinalePhase.Locks) }
+
+    Column(
+        modifier = Modifier.widthIn(max = 460.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        FinaleLockRail(unlocked = lockIndex, total = FINALE_LOCKS.size)
+
+        when (phase) {
+            FinalePhase.Locks -> {
+                val lock = FINALE_LOCKS[lockIndex]
+                TerminalPanel {
+                    Text(
+                        text = lock.label,
+                        color = DangerRed,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = lock.prompt,
+                        color = TextPrimary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                    )
+                    if (attempts >= 2) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = "TIPP: ${lock.hint}",
+                            color = WarmAmber,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                        )
+                    }
+                }
+                CodeInput(
+                    value = input,
+                    onValueChange = { input = it },
+                    label = "Riegel ${lockIndex + 1} von ${FINALE_LOCKS.size}",
+                )
+                HackerButton(
+                    text = "Riegel öffnen",
+                    accent = NeonGreen,
+                    onClick = {
+                        if (input.normalizeAnswer() == lock.answer.normalizeAnswer()) {
+                            input = ""
+                            attempts = 0
+                            message = null
+                            if (lockIndex < FINALE_LOCKS.lastIndex) {
+                                lockIndex += 1
+                            } else {
+                                lockIndex = FINALE_LOCKS.size
+                                phase = FinalePhase.Shutdown
+                            }
+                        } else {
+                            attempts += 1
+                            message = "ZUGRIFF VERWEIGERT // Riegel bleibt zu"
+                            onWrong()
+                        }
+                    },
+                )
+                message?.let {
+                    GlitchText(
+                        text = it,
+                        style = TerminalTextStyle.copy(
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
+            }
+
+            FinalePhase.Shutdown -> {
+                TerminalPanel {
+                    Text(
+                        text = "ALLE RIEGEL OFFEN",
+                        color = NeonGreen,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 14.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Vor euch liegt der rote Schalter der Notabschaltung. Der Hacker merkt, dass ihr da seid - der Bildschirm flackert.",
+                        color = TextPrimary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Haltet den Schalter gedrückt, bis der Balken voll ist. Nicht loslassen!",
+                        color = WarmAmber,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                    )
+                }
+                HoldToShutdownButton(onComplete = { phase = FinalePhase.Victory })
+            }
+
+            FinalePhase.Victory -> {
+                FinaleVictory(onFinish = onSolved)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FinaleLockRail(unlocked: Int, total: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        repeat(total) { index ->
+            val open = index < unlocked
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .background(
+                            if (open) NeonGreen.copy(alpha = 0.85f) else DangerRed.copy(alpha = 0.30f),
+                            RoundedCornerShape(3.dp),
+                        )
+                        .border(
+                            1.dp,
+                            if (open) NeonGreen else DangerRed.copy(alpha = 0.55f),
+                            RoundedCornerShape(3.dp),
+                        ),
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = if (open) "OFFEN" else "ZU",
+                    color = if (open) NeonGreen else TextSecondary,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HoldToShutdownButton(onComplete: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val haptics = LocalHapticFeedback.current
+    val hapticsEnabled = LocalHapticsEnabled.current
+    var progress by remember { mutableStateOf(0f) }
+    var fired by remember { mutableStateOf(false) }
+
+    // Fortschritt aus der tatsaechlich vergangenen Zeit rechnen, nicht aus der
+    // Anzahl der Schleifendurchlaeufe: Jede Aenderung loest eine Recomposition
+    // aus, dadurch dauert ein delay(16) real deutlich laenger als 16 ms. Mit
+    // Frame-Zaehlung braeuchte das Halten je nach Geraet mal 2, mal 4 Sekunden.
+    LaunchedEffect(pressed, fired) {
+        if (fired) return@LaunchedEffect
+        val startProgress = progress
+        val startNanos = System.nanoTime()
+        if (pressed) {
+            while (progress < 1f) {
+                delay(16)
+                val elapsed = (System.nanoTime() - startNanos) / 1_000_000_000f
+                progress = (startProgress + elapsed / HOLD_TO_SHUTDOWN_SECONDS).coerceAtMost(1f)
+            }
+            fired = true
+            if (hapticsEnabled) {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+            onComplete()
+        } else {
+            while (progress > 0f) {
+                delay(16)
+                val elapsed = (System.nanoTime() - startNanos) / 1_000_000_000f
+                progress = (startProgress - elapsed / HOLD_RELEASE_SECONDS).coerceAtLeast(0f)
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(66.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(DangerRed.copy(alpha = 0.12f))
+            .border(1.dp, DangerRed.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+            ) { },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxWidth(progress)
+                .fillMaxHeight()
+                .background(DangerRed.copy(alpha = 0.45f)),
+        )
+        Text(
+            text = if (progress <= 0f) "GEDRÜCKT HALTEN" else "${(progress * 100).toInt()} %",
+            color = DangerRed,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Black,
+            fontSize = 17.sp,
+        )
+    }
+}
+
+@Composable
+private fun FinaleVictory(onFinish: () -> Unit) {
+    var revealed by remember { mutableStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        while (revealed < FINALE_VICTORY_LINES.size) {
+            delay(480)
+            revealed += 1
+        }
+    }
+
+    TerminalPanel {
+        FINALE_VICTORY_LINES.take(revealed).forEach { line ->
+            Text(
+                text = line,
+                color = NeonGreen,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+            )
+        }
+    }
+    if (revealed >= FINALE_VICTORY_LINES.size) {
+        Spacer(Modifier.height(6.dp))
+        GlitchText(
+            text = "KAG GERETTET",
+            style = TerminalTextStyle.copy(
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+            ),
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Der Hacker ist raus. Die Noten sind sicher. Ihr habt es geschafft.",
+            color = TextPrimary,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(6.dp))
+        HackerButton(
+            text = "Abspann ansehen",
+            accent = NeonGreen,
+            large = true,
+            onClick = onFinish,
+        )
     }
 }
 
@@ -1959,18 +2475,29 @@ private fun HeaderBar(
     overline: String,
     lives: Int,
     onBack: () -> Unit,
+    onManual: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        HackerButton(
-            text = "<",
-            accent = NeonCyan,
-            compact = true,
-            onClick = onBack,
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            HackerButton(
+                text = "<",
+                accent = NeonCyan,
+                compact = true,
+                onClick = onBack,
+            )
+            if (onManual != null) {
+                HackerButton(
+                    text = "?",
+                    accent = WarmAmber,
+                    compact = true,
+                    onClick = onManual,
+                )
+            }
+        }
         Column(horizontalAlignment = Alignment.End) {
             Text(
                 text = overline,
@@ -2770,12 +3297,31 @@ Wichtig: Das gesuchte Wort ist ENGLISCH und passt zum Apfelpfarrer.
         ),
     ),
     GameNode(
+        id = "finale",
+        title = "Shutdown",
+        overline = "Letztes Schloss // Notabschaltung",
+        phase = GamePhase.Finale,
+        sections = listOf(
+            "Der Master-Code hat gewirkt. Die Tür zum Computerraum steht offen.",
+            "Drinnen surrt der Server. Auf dem Monitor läuft der Fortschrittsbalken des Hackers - er lädt gerade alle Noten der Schule herunter.",
+            "Es gibt nur einen Weg, ihn zu stoppen: die Notabschaltung. Sie ist mit fünf Riegeln gesichert.",
+            "Jeder Riegel prüft einen Code, den ihr auf eurem Weg durch die Schule bereits geknackt habt. Holt eure Notizen raus - jetzt zahlt sich alles aus.",
+        ),
+    ),
+)
+
+/**
+ * Archiv-Eintraege. Sie sind bewusst NICHT Teil des Spielablaufs, sondern
+ * jederzeit ueber das Handbuch erreichbar - auch mitten in einem Raetsel.
+ */
+private val manualNodes = listOf(
+    GameNode(
         id = "cipher_training",
         title = "Geheimschriften",
-        overline = "Archiv // Nachschlagewerk",
+        overline = "Handbuch // Nachschlagewerk",
         phase = GamePhase.Archive,
         sections = listOf(
-            "Archiv-Station. Hier gibt es nichts einzugeben - das ist euer Nachschlagewerk.",
+            "Hier gibt es nichts einzugeben - das ist euer Nachschlagewerk.",
             "Die wichtigste Regel in diesem Spiel: Ein Buchstabe wird zu seiner Position im Alphabet. A=1, B=2, C=3 und so weiter bis Z=26. Mehr braucht ihr für die Rätsel nicht.",
             "Es gibt aber noch viele andere Geheimschriften. Die folgenden kommen in diesem Spiel NICHT vor - sie sind nur zum Angeben und Weitererzählen.",
             "Caesar-Verschiebung: Jeder Buchstabe rutscht um eine feste Zahl im Alphabet weiter. Bei Verschiebung 7 wird aus A ein H. Benannt ist sie nach Julius Caesar, der damit seine Briefe schützte.",
@@ -2788,7 +3334,7 @@ Wichtig: Das gesuchte Wort ist ENGLISCH und passt zum Apfelpfarrer.
     GameNode(
         id = "aigner_archive",
         title = "Der Apfelpfarrer",
-        overline = "Archiv // Korbinian Aigner",
+        overline = "Handbuch // Korbinian Aigner",
         phase = GamePhase.Archive,
         sections = listOf(
             "Unsere Schule ist nach Korbinian Aigner benannt. Das hier ist seine Geschichte.",
@@ -2808,10 +3354,10 @@ Wichtig: Das gesuchte Wort ist ENGLISCH und passt zum Apfelpfarrer.
     GameNode(
         id = "school_clues",
         title = "Das KAG in Zahlen",
-        overline = "Archiv // Schule und Stadt",
+        overline = "Handbuch // Schule und Stadt",
         phase = GamePhase.Archive,
         sections = listOf(
-            "Archiv-Station. Hier sammelt das System alles, was es über eure Schule und eure Stadt weiß.",
+            "Alles, was das System über eure Schule und eure Stadt weiß.",
             "Unsere Schule wurde 2004 eröffnet - damals noch unter dem Namen Gymnasium Erding II. Am 28. Juni 2010 beschloss der Kreistag die Umbenennung nach Korbinian Aigner. Die offizielle Namensgebungsfeier fand im Februar 2011 statt.",
             "Adresse: Sigwolfstraße 50, 85435 Erding. Die Vorwahl von Erding ist 08122 - genau die habt ihr im ersten Code gebraucht.",
             "Im Schuljahr 2024/25 lernten hier 1211 Schülerinnen und Schüler, unterrichtet von 92 Lehrkräften.",
@@ -2821,18 +3367,6 @@ Wichtig: Das gesuchte Wort ist ENGLISCH und passt zum Apfelpfarrer.
             "Jetzt zur Stadt: Erding wurde schon im Jahr 788 zum ersten Mal erwähnt - das ist über 1200 Jahre her. Die Stadtrechte bekam Erding aber erst 1228.",
             "Der Schöne Turm ist das letzte erhaltene Stadttor der Altstadt. Gebaut wurde er 1408 und ist damit über 600 Jahre alt.",
             "Und zum Schluss etwas Verblüffendes: Der Flughafen München liegt gar nicht in München, sondern im Erdinger Moos - also im Landkreis Erding.",
-        ),
-    ),
-    GameNode(
-        id = "finale",
-        title = "Finale",
-        overline = "Letztes Schloss // Shutdown",
-        phase = GamePhase.Finale,
-        sections = listOf(
-            "Ihr habt alle Codefragmente gefunden und den Master-Code zusammengesetzt.",
-            "Das letzte Schloss springt auf. Der Weg zum Computerraum ist frei.",
-            "Ihr zieht das Netzwerkkabel. Die Verbindung des Hackers bricht ab.",
-            "Das KAG ist gerettet. Gut gemacht!",
         ),
     ),
 )

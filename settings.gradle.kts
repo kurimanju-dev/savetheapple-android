@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Save the Apple"
 include(":app")
+include(":baselineprofile")

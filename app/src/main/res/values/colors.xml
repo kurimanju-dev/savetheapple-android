@@ -9,4 +9,6 @@
     <color name="white">#FFFFFFFF</color>
     <color name="terminal_black">#FF020404</color>
     <color name="neon_green">#FF69FF9A</color>
+    <!-- Hintergrund des App-Icons, abgestimmt auf den dunklen Grund von kag_logo.png -->
+    <color name="kag_icon_background">#FF04090B</color>
 </resources>

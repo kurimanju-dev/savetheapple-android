@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Vordergrund des App-Icons: das KAG-Logo, um 10% eingerueckt.
+
+  Adaptive Icons zeichnen auf einer 108dp-Flaeche, von der nur die mittleren
+  72dp (66,7%) garantiert sichtbar sind. Bei 10% Inset belegt die Grafik 80%
+  der Flaeche - der Apfel landet damit sicher im sichtbaren Bereich, waehrend
+  der quadratische Rand der Grafik ausserhalb der Maske liegt und nie zu
+  sehen ist.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/kag_logo"
+    android:inset="10%" />
