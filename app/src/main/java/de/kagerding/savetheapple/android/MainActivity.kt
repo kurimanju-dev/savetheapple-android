@@ -222,7 +222,6 @@ private enum class Screen {
     Game,
     Credits,
     Settings,
-    Manual,
     Failure,
 }
 
@@ -335,8 +334,14 @@ private class EscapeKagAppState(
     var resetSignal by mutableStateOf(0)
         private set
 
-    /** Bildschirm, zu dem das Handbuch zurueckkehrt - damit ein laufendes Raetsel nicht verloren geht. */
-    var manualReturn by mutableStateOf(Screen.Menu)
+    /**
+     * Das Handbuch wird als Overlay ueber dem aktuellen Bildschirm gezeigt, nicht
+     * als eigener Screen. Als eigener Screen wuerde AnimatedContent den
+     * Spielbildschirm aus der Composition werfen und damit den kompletten
+     * Raetselfortschritt loeschen (offene Riegel, leuchtende Felder, Wordle-Versuche,
+     * aufgedeckte Hinweise) - obwohl die App genau das Gegenteil verspricht.
+     */
+    var manualOpen by mutableStateOf(false)
         private set
 
     val canNavigateBack: Boolean
@@ -416,7 +421,11 @@ private class EscapeKagAppState(
             resetSignal += 1
         } else {
             // Durchgespielt: Der Abspann ist die Belohnung, nicht das Hauptmenue.
+            // Danach den Lauf zuruecksetzen, damit die naechste Gruppe am selben
+            // Geraet wieder von vorne startet und nicht mitten im Finale landet.
             navigateTo(Screen.Credits)
+            saveStage(0)
+            resetSignal += 1
         }
     }
 
@@ -446,12 +455,12 @@ private class EscapeKagAppState(
     }
 
     fun openManual() {
-        manualReturn = if (screen == Screen.Game) Screen.Game else Screen.Menu
-        navigateTo(Screen.Manual)
+        performHaptic()
+        manualOpen = true
     }
 
     fun closeManual() {
-        navigateTo(manualReturn)
+        manualOpen = false
     }
 
     fun updateInvincible(enabled: Boolean) {
@@ -511,8 +520,8 @@ private fun EscapeKagApp() {
         }
     }
 
-    BackHandler(enabled = appState.canNavigateBack) {
-        if (appState.screen == Screen.Manual) {
+    BackHandler(enabled = appState.manualOpen || appState.canNavigateBack) {
+        if (appState.manualOpen) {
             appState.closeManual()
         } else {
             appState.navigateTo(Screen.Menu)
@@ -526,6 +535,20 @@ private fun EscapeKagApp() {
             errorFlash = appState.showErrorOverlay,
         ) {
             AppRouteContent(appState)
+            if (appState.manualOpen) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(TerminalBlack.copy(alpha = 0.97f))
+                        // Faengt Klicks ab, damit sie nicht auf dem Raetsel darunter landen.
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { },
+                ) {
+                    ManualScreen(onBack = appState::closeManual)
+                }
+            }
         }
     }
 }
@@ -537,8 +560,7 @@ private fun Screen.backgroundForStage(stage: Int): Int {
         Screen.Settings,
         Screen.Credits,
         Screen.Failure -> R.drawable.secondback
-        Screen.Menu,
-        Screen.Manual -> R.drawable.kagescape
+        Screen.Menu -> R.drawable.kagescape
         Screen.Game -> gameNodes[stage.coerceIn(0, gameNodes.lastIndex)].phase.background
     }
 }
@@ -642,9 +664,6 @@ private fun AppRouteContent(appState: EscapeKagAppState) {
                 Screen.Credits -> CreditsScreen(
                     onBack = { appState.navigateTo(Screen.Menu) },
                 )
-                Screen.Manual -> ManualScreen(
-                    onBack = appState::closeManual,
-                )
                 Screen.Settings -> SettingsScreen(
                     isMuted = appState.isMuted,
                     hapticsEnabled = appState.hapticsEnabled,
@@ -668,7 +687,6 @@ private val Screen.routeOrder: Int
         Screen.Menu -> 1
         Screen.Settings -> 2
         Screen.Credits -> 2
-        Screen.Manual -> 2
         Screen.GameStartIntro -> 3
         Screen.Game -> 4
         Screen.Failure -> 5
@@ -1159,7 +1177,11 @@ private fun PuzzleScreen(
             if (!inputMode) {
                 PhaseTextStage(phase = phase) {
                     Column(
-                        modifier = Modifier.widthIn(max = 520.dp),
+                        modifier = Modifier
+                            .widthIn(max = 520.dp)
+                            // Scrollbar, damit bei grosser System-Schriftgroesse weder
+                            // der Text noch der Hinweis "tippen: weiter" abgeschnitten wird.
+                            .verticalScroll(rememberScrollState()),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
@@ -1241,7 +1263,13 @@ private fun PuzzleScreen(
                                     feedback = null
                                     onSolved()
                                 } else {
-                                    feedback = "ACCESS DENIED // ${lives - 1} Leben verbleibend"
+                                    // Beim letzten Leben nicht "0 Leben verbleibend"
+                                    // anzeigen - danach wird ohnehin aufgefuellt.
+                                    feedback = if (lives > 1) {
+                                        "ACCESS DENIED // ${lives - 1} Leben verbleibend"
+                                    } else {
+                                        "ACCESS DENIED // letzter Versuch verbraucht"
+                                    }
                                     onWrong()
                                 }
                             },
@@ -2305,8 +2333,12 @@ private fun FinaleGate(
                     onClick = {
                         if (input.normalizeAnswer() == lock.answer.normalizeAnswer()) {
                             input = ""
-                            attempts = 0
                             message = null
+                            // attempts wird bewusst NICHT zurueckgesetzt: Sonst
+                            // verteilen sich drei Fehlversuche auf drei Riegel,
+                            // der Zaehler steht nie auf 2, und es erscheint nie
+                            // ein Tipp - waehrend die Leben trotzdem aufgebraucht
+                            // werden. Der Tipp gilt immer fuer den aktuellen Riegel.
                             if (lockIndex < FINALE_LOCKS.lastIndex) {
                                 lockIndex += 1
                             } else {
@@ -2933,11 +2965,21 @@ private fun MatrixRain() {
         ),
         label = "matrix-offset",
     )
+    // Ein einziges Paint fuer den gesamten Regen. Frueher wurde pro Zeichen und
+    // pro Frame ein neues angelegt - bei rund 700 Zeichen und 60 fps waren das
+    // ueber 40.000 Allokationen pro Sekunde, was auf schwachen Geraeten ruckelt.
+    val paint = remember {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.argb(70, 105, 255, 154)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+    }
     Canvas(
         modifier = Modifier
             .fillMaxSize()
             .alpha(0.42f),
     ) {
+        paint.textSize = 12.sp.toPx()
         val columnWidth = 34.dp.toPx()
         val rowHeight = 18.dp.toPx()
         val columns = (size.width / columnWidth).toInt() + 2
@@ -2950,11 +2992,7 @@ private fun MatrixRain() {
                     bit,
                     column * columnWidth,
                     y,
-                    android.graphics.Paint().apply {
-                        color = android.graphics.Color.argb(70, 105, 255, 154)
-                        textSize = 12.sp.toPx()
-                        typeface = android.graphics.Typeface.MONOSPACE
-                    },
+                    paint,
                 )
             }
         }
@@ -3514,6 +3552,11 @@ Wichtig: Das gesuchte Wort ist ENGLISCH und passt zum Apfelpfarrer.
             "Drinnen surrt der Server. Auf dem Monitor läuft der Fortschrittsbalken des Hackers - er lädt gerade alle Noten der Schule herunter.",
             "Es gibt nur einen Weg, ihn zu stoppen: die Notabschaltung. Sie ist mit fünf Riegeln gesichert.",
             "Jeder Riegel prüft einen Code, den ihr auf eurem Weg durch die Schule bereits geknackt habt. Holt eure Notizen raus - jetzt zahlt sich alles aus.",
+        ),
+        hints = listOf(
+            "Alle fünf Riegel wollen Codes, die ihr schon einmal eingegeben habt. Schaut in eure Notizen - in genau der Reihenfolge, in der ihr sie gefunden habt.",
+            "Riegel 1 bis 4 sind: 419, 8202, APPLE und 00245.",
+            "Riegel 5 ist 6125 - die letzten vier Ziffern des Master-Codes. Danach den roten Schalter gedrückt halten, bis der Balken voll ist.",
         ),
     ),
 )
