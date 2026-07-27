@@ -53,6 +53,7 @@ android {
             }
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -61,6 +62,27 @@ android {
         compose = true
         buildConfig = true
     }
+}
+
+// BEKANNTE EINSCHRAENKUNG (Stand AGP 9.2.1 / baselineprofile 1.5.0-alpha07):
+//
+// Die Sammel-Variante "nonMinifiedRelease" erbt den optimization-Block von
+// "release" und laeuft daher durch R8. Das erzeugte Profil enthaelt dadurch die
+// obfuskierten Namen genau dieses R8-Laufs. Im echten Release-Build vergibt R8
+// andere Namen, weshalb beim Bauen "Startup class not found: a01" erscheint und
+// nur ein kleiner Teil der Regeln greift.
+//
+// Erfolglos versucht: optimization{enable=false} per
+// buildTypes.matching{...}.configureEach fuer nonMinifiedRelease (AGP erfasst
+// die Einstellung schon bei der Variantenerzeugung) sowie die unten gesetzte
+// Option baselineProfileRulesRewrite, die die Regeln eigentlich ueber die
+// Mapping-Datei zurueckschreiben soll.
+//
+// Das Profil schadet nicht (rund 6 KB im APK), bringt aktuell aber kaum etwas.
+// Die Option bleibt gesetzt, damit es mit einer stabilen Plugin-Version ohne
+// weitere Aenderung funktioniert.
+baselineProfile {
+    baselineProfileRulesRewrite = true
 }
 
 dependencies {

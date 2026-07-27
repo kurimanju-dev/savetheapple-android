@@ -133,9 +133,9 @@ matrix_answer = nodes["erding_matrix"]["answers"][0]
 ok.append(f"Matrix: {len(all_cells)} Felder insgesamt, erwartete Eingabe '{matrix_answer}'")
 
 # ------------------------------------------------- 6. Raumnummern durchrechnen
-room_answer = nodes["room_sorting"]["answers"][0]
-print(f"Raumnummern-Code laut Quelltext: {room_answer}\n")
-print("Alle Zerlegungen in 2-4 Raumnummern, die sortiert genau diesen Code ergeben:")
+# Das Raumnummern-Raetsel wurde entfernt, weil es als einziges eine
+# ausgedruckte Liste brauchte. Der Block bleibt stehen, falls es
+# zurueckkommt - er rechnet dann alle moeglichen Raumlisten durch.
 
 
 def partitions(s, parts):
@@ -147,19 +147,26 @@ def partitions(s, parts):
             yield [s[:i]] + rest
 
 
-found = 0
-for n_parts in (2, 3, 4):
-    for p in partitions(room_answer, n_parts):
-        # Sortiert nach Zahlenwert muss die Reihenfolge exakt so bleiben
-        vals = [int(x) for x in p]
-        if vals != sorted(vals):
-            continue
-        if len(set(vals)) != len(vals):
-            continue           # gleiche Raumnummer zweimal waere unsinnig
-        found += 1
-        print(f"  {n_parts} Raeume: " + " < ".join(p) +
-              f"   (Zahlenwerte {', '.join(str(v) for v in vals)})")
-print(f"  -> {found} moegliche Kombinationen\n")
+if "room_sorting" in nodes:
+    room_answer = nodes["room_sorting"]["answers"][0]
+    print(f"Raumnummern-Code laut Quelltext: {room_answer}\n")
+    print("Alle Zerlegungen in 2-4 Raumnummern, die sortiert genau diesen Code ergeben:")
+    found = 0
+    for n_parts in (2, 3, 4):
+        for p in partitions(room_answer, n_parts):
+            # Sortiert nach Zahlenwert muss die Reihenfolge exakt so bleiben
+            vals = [int(x) for x in p]
+            if vals != sorted(vals):
+                continue
+            if len(set(vals)) != len(vals):
+                continue       # gleiche Raumnummer zweimal waere unsinnig
+            found += 1
+            print(f"  {n_parts} Raeume: " + " < ".join(p) +
+                  f"   (Zahlenwerte {', '.join(str(v) for v in vals)})")
+    print(f"  -> {found} moegliche Kombinationen\n")
+    ok.append(f"Raumnummern: {found} moegliche Raumlisten ergeben {room_answer}")
+else:
+    ok.append("Raumnummern-Raetsel ist entfernt - kein ausgedrucktes Material mehr noetig")
 
 # ------------------------------------------------------------ 7. Hinweise pruefen
 for nid, data in nodes.items():

@@ -1,19 +1,18 @@
 # Vorbereitung — Escape the KAG (Lite-Variante)
 
-> **Lite.** Auf diesem Branch sind alle Rätsel entfernt, für die Material in der Schule ausgelegt werden muss. Übrig bleiben **zwei** Vorbereitungspunkte statt sieben. Die Vollversion mit allen Rätseln liegt auf `main`.
+> **Lite.** Auf diesem Branch sind alle Rätsel entfernt, für die Material in der Schule ausgelegt oder ausgedruckt werden muss. Übrig bleibt **ein einziger** Vorbereitungspunkt statt sieben. Die Vollversion mit allen Rätseln liegt auf `main`.
 
-**Zeitbedarf:** ca. 30 Minuten. Wenn es sehr eilig ist, reichen **Teil 1** und der **Selbsttest in Teil 4**.
+**Zeitbedarf:** ca. 20 Minuten. Wenn es sehr eilig ist, reichen **Teil 1** und der **Selbsttest in Teil 4**.
 
 ---
 
 ## ⚠️ Das Wichtigste zuerst
 
-Nur noch zwei Dinge können das Spiel blockieren:
+Nur noch **eine** Sache kann das Spiel blockieren:
 
-1. **Die Zählwerte in der Schule müssen zu den Lösungen passen** (Teil 2.1) — Bäume und die Bedingung K · A = 20.
-2. **Eine ausgedruckte Raumnummern-Liste** (Teil 2.2).
+> **Die Zählwerte in der Schule müssen zu den Lösungen passen** (Teil 2.1) — die Bäume vor den Musikräumen und die Bedingung K · A = 20.
 
-Alles andere läuft komplett im Tablet.
+Es muss **nichts** mehr ausgedruckt, ausgelegt oder versteckt werden. Alles andere läuft komplett im Tablet.
 
 ---
 
@@ -110,24 +109,7 @@ Mögliche Kombinationen: **5 Bilder × 4 Brücken**, **4 × 5**, **10 × 2** ode
 
 > **Notfall:** Wenn ihr das gar nicht prüfen könnt, ist es kein Beinbruch — beide Rätsel haben ein Hinweis-System, dessen letzte Stufe die Lösung nennt. Die Gruppen kommen also in jedem Fall weiter.
 
-### 2.2 Raumnummern-Liste ausdrucken
-
-Die einzige Station, für die noch etwas vorbereitet werden muss.
-
-Die Lösung ist `00245`. Die Liste muss so gebaut sein, dass die **der Größe nach sortierten Raumnummern hintereinandergeschrieben genau `00245`** ergeben. Zum Beispiel drei Kurse:
-
-```
-Kunst      Raum 4
-Biologie   Raum 002
-Musik      Raum 5
-```
-→ sortiert: 002, 4, 5 → aneinandergehängt: **00245** ✅
-
-- [ ] Liste mit dieser Logik erstellen und ausdrucken
-- [ ] Selbst einmal nachrechnen, dass wirklich 00245 herauskommt
-- [ ] Liste auslegen oder aufhängen
-
-### 2.3 Was in der Lite-Variante **entfällt**
+### 2.2 Was in der Lite-Variante **entfällt**
 
 Für diese Rätsel muss **nichts** mehr vorbereitet werden — sie sind entfernt:
 
@@ -135,6 +117,7 @@ Für diese Rätsel muss **nichts** mehr vorbereitet werden — sie sind entfernt
 - ~~Schatten-Rätsel~~ (Zettel am Fenster)
 - ~~Spiegel-Code~~ (Tasche, Handspiegel, Spiegelschrift, Vorhängeschloss, 30 Stühle)
 - ~~Psychologie-Zettel~~ (Zettel bei den Psychologieräumen)
+- ~~Raumnummern~~ (ausgedruckte Kursliste)
 
 Ihre Codefragmente `FREIHEIT`, `1994` und `60` gibt die App jetzt selbst in der Lockdown-Story aus. Der Master-Code bleibt dadurch unverändert und die Rechenaufgabe erhalten.
 
@@ -149,7 +132,7 @@ Ihre Codefragmente `FREIHEIT`, `1994` und `60` gibt die App jetzt selbst in der 
 - **Altersempfehlung:** ab 10 Jahren
 - **Aufsicht:** Eine Person genügt; sie sollte auf den Hinweis-Knopf hinweisen können
 
-### Reihenfolge im Spiel (9 Stationen)
+### Reihenfolge im Spiel (8 Stationen)
 
 | # | Station | Ort | Eingabe |
 | --- | --- | --- | --- |
@@ -160,22 +143,20 @@ Ihre Codefragmente `FREIHEIT`, `1994` und `60` gibt die App jetzt selbst in der 
 | 5 | Worträtsel | überall | `APPLE` |
 | 6 | Zusammensetzen | überall | `618598592019946011616125` |
 | 7 | ERDING-Matrix | überall | `1`, nach 3 Mini-Aufgaben im Raster |
-| 8 | Raumnummern | bei der Liste | `00245` |
-| 9 | Shutdown (Finale) | überall | 5 Riegel, siehe unten |
+| 8 | Shutdown (Finale) | überall | 4 Riegel, siehe unten |
 
 > Nur die Stationen 2, 3 und 8 sind an einen Ort gebunden. Alles andere können die Gruppen überall lösen — praktisch, wenn es an einer Stelle staut.
 
 ### Das Finale
 
-Das Finale fragt fünf Codes ab, die die Gruppe schon geknackt hat — sie brauchen also ihre Notizen:
+Das Finale fragt vier Codes ab, die die Gruppe schon geknackt hat — sie brauchen also ihre Notizen:
 
 | Riegel | Antwort |
 | --- | --- |
 | 1 | `419` |
 | 2 | `8202` |
 | 3 | `APPLE` |
-| 4 | `00245` |
-| 5 | `6125` (die letzten vier Ziffern des Master-Codes) |
+| 4 | `6125` (die letzten vier Ziffern des Master-Codes) |
 
 Danach muss ein roter Schalter **1,6 Sekunden gedrückt gehalten** werden. Nach zwei Fehlversuchen an einem Riegel erscheint automatisch ein Tipp.
 
@@ -207,11 +188,10 @@ Einmal komplett durchspielen. Rechnet 10 Minuten ein.
 - [ ] Worträtsel: `APPLE` wird angenommen, Farben stimmen
 - [ ] Master-Code: `618598592019946011616125` wird angenommen
 - [ ] ERDING-Matrix: alle drei Mini-Aufgaben gelöst, die **1** ist danach gut erkennbar (auch bei Sonnenlicht draußen!)
-- [ ] Raumnummern: Liste liegt aus, `00245` wird angenommen
 - [ ] Handbuch über den `?`-Knopf mitten im Rätsel geöffnet — Spielstand bleibt erhalten
 - [ ] Hinweis-Knopf bei mindestens einem Rätsel ausprobiert
 - [ ] Drei falsche Eingaben absichtlich: Fortschritt bleibt erhalten
-- [ ] Finale: alle fünf Riegel geöffnet, Schalter gehalten, Abspann erscheint
+- [ ] Finale: alle vier Riegel geöffnet, Schalter gehalten, Abspann erscheint
 
 **Der Master-Code zum Nachrechnen:**
 
@@ -238,7 +218,6 @@ zusammen → 618598592019946011616125   (24 Ziffern)
 - [ ] Tablets geladen, App vom **`lite`-Branch** installiert, Spielstände geleert
 - [ ] K · A = 20 vor Ort bestätigt
 - [ ] 4 Bäume vor den Musikräumen bestätigt
-- [ ] Raumnummern-Liste ausgedruckt und ausgelegt
 - [ ] Ein kompletter Selbsttest gemacht
 - [ ] Aufsicht kennt Hinweis-Knopf und Reset
 

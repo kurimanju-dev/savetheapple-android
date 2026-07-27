@@ -14,12 +14,17 @@ Android-Escape-Room-App fuer das P-Seminar Informatik App Programmierung am Korb
 ## Lite-Variante
 
 Dieser Branch (`lite`) verzichtet auf alle Raetsel, fuer die vorher physische
-Materialien in der Schule ausgelegt werden muessen. Entfernt wurden
-Buecher-Check, Schatten-Raetsel, Spiegel-Code und Psychologie-Zettel.
+Materialien in der Schule ausgelegt oder ausgedruckt werden muessen. Entfernt
+wurden Buecher-Check, Schatten-Raetsel, Spiegel-Code, Psychologie-Zettel und
+Raumnummern.
 
 Die drei Codefragmente aus diesen Raetseln (`FREIHEIT`, `1994`, `60`) liefert
 jetzt die App selbst in der Lockdown-Story. Der Master-Code bleibt dadurch
 unveraendert, und die Rechenaufgabe bleibt als Raetsel erhalten.
+
+Vorbereitung: Es muss nichts mehr ausgelegt werden. Nur die Zaehlwerte in der
+Schule muessen stimmen (Baeume vor den Musikraeumen, K mal A = 20) - siehe
+VORBEREITUNG.md.
 
 Der volle Umfang liegt auf `main`.
 
@@ -32,7 +37,7 @@ Der volle Umfang liegt auf `main`.
 | Wordle | `APPLE` |
 | Compile | `618598592019946011616125` |
 | ERDING-Matrix | `1` |
-| Raumnummern | `00245` |
+| Finale (4 Riegel) | `419`, `8202`, `APPLE`, `6125` |
 
 Von der App vorgegeben (keine Eingabe noetig): `FREIHEIT`, `1994`, `60`.
 

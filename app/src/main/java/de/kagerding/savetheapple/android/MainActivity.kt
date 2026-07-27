@@ -2246,13 +2246,7 @@ private val FINALE_LOCKS = listOf(
         hint = "Fünf Buchstaben, englisch, passt zum Apfelpfarrer.",
     ),
     FinaleLock(
-        label = "RIEGEL 4 // RAUMLISTE",
-        prompt = "Der vierte Riegel will den Code aus den sortierten Raumnummern.",
-        answer = "00245",
-        hint = "Fünf Ziffern - und er beginnt mit zwei Nullen.",
-    ),
-    FinaleLock(
-        label = "RIEGEL 5 // MASTER-KEY",
+        label = "RIEGEL 4 // MASTER-KEY",
         prompt = "Der letzte Riegel prüft den Master-Code selbst. Gebt seine letzten vier Ziffern ein.",
         answer = "6125",
         hint = "Der Master-Code endet auf 11616125. Davon die letzten vier Ziffern.",
@@ -3526,23 +3520,6 @@ Wichtig: Das gesuchte Wort ist ENGLISCH und passt zum Apfelpfarrer.
         ),
     ),
     GameNode(
-        id = "room_sorting",
-        title = "Raumnummern",
-        overline = "Kursliste // Sortierung",
-        sections = listOf(
-            "Auf dem Zettel findet ihr eine Liste: mehrere Kurse und dazu die vollständige Raumnummer, in der sie stattfinden.",
-            "Sortiert die Raumnummern nach ihrer Größe: die kleinste zuerst, die größte zuletzt.",
-            "Schreibt dann die Ziffern aller Raumnummern in dieser Reihenfolge direkt hintereinander.",
-            "Ganz wichtig: Nullen am Anfang einer Raumnummer gehören dazu und dürfen nicht weggelassen werden.",
-        ),
-        acceptedAnswers = setOf("00245"),
-        hints = listOf(
-            "Sortiert zuerst vollständig, schreibt erst danach ab. Eine Raumnummer wie 002 bleibt 002 - beide Nullen zählen mit.",
-            "Der fertige Code ist fünf Ziffern lang und beginnt mit zwei Nullen.",
-            "Die Lösung ist 00245.",
-        ),
-    ),
-    GameNode(
         id = "finale",
         title = "Shutdown",
         overline = "Letztes Schloss // Notabschaltung",
@@ -3550,13 +3527,13 @@ Wichtig: Das gesuchte Wort ist ENGLISCH und passt zum Apfelpfarrer.
         sections = listOf(
             "Der Master-Code hat gewirkt. Die Tür zum Computerraum steht offen.",
             "Drinnen surrt der Server. Auf dem Monitor läuft der Fortschrittsbalken des Hackers - er lädt gerade alle Noten der Schule herunter.",
-            "Es gibt nur einen Weg, ihn zu stoppen: die Notabschaltung. Sie ist mit fünf Riegeln gesichert.",
+            "Es gibt nur einen Weg, ihn zu stoppen: die Notabschaltung. Sie ist mit vier Riegeln gesichert.",
             "Jeder Riegel prüft einen Code, den ihr auf eurem Weg durch die Schule bereits geknackt habt. Holt eure Notizen raus - jetzt zahlt sich alles aus.",
         ),
         hints = listOf(
-            "Alle fünf Riegel wollen Codes, die ihr schon einmal eingegeben habt. Schaut in eure Notizen - in genau der Reihenfolge, in der ihr sie gefunden habt.",
-            "Riegel 1 bis 4 sind: 419, 8202, APPLE und 00245.",
-            "Riegel 5 ist 6125 - die letzten vier Ziffern des Master-Codes. Danach den roten Schalter gedrückt halten, bis der Balken voll ist.",
+            "Alle vier Riegel wollen Codes, die ihr schon einmal eingegeben habt. Schaut in eure Notizen - in genau der Reihenfolge, in der ihr sie gefunden habt.",
+            "Riegel 1 bis 3 sind: 419, 8202 und APPLE.",
+            "Riegel 4 ist 6125 - die letzten vier Ziffern des Master-Codes. Danach den roten Schalter gedrückt halten, bis der Balken voll ist.",
         ),
     ),
 )

@@ -19,12 +19,11 @@ Vorbereitung für den Einsatz: siehe **[VORBEREITUNG.md](VORBEREITUNG.md)**.
 | 4 | Worträtsel (Wordle) | `APPLE` | — |
 | 5 | Zusammensetzen (Master-Code) | `618598592019946011616125` | — |
 | 6 | ERDING-Matrix | `1` (nach 3 Mini-Aufgaben) | — |
-| 7 | Raumnummern | `00245` | Kurs-/Raumliste |
-| 8 | Shutdown (Finale) | 5 Riegel, siehe unten | — |
+| 7 | Shutdown (Finale) | 4 Riegel, siehe unten | — |
 
 Das **Handbuch** (Geheimschriften, Der Apfelpfarrer, Das KAG in Zahlen) ist kein Teil des Ablaufs mehr, sondern **jederzeit erreichbar** — im Hauptmenü über „Handbuch", im Spiel über den `?`-Knopf oben links.
 
-Nur **drei Stationen** brauchen überhaupt noch Vorbereitung: Stage 1 und 2 (Dinge, die in der Schule zählbar sein müssen) und Stage 7 (eine ausgedruckte Liste). Alles andere läuft komplett im Tablet.
+Nur **zwei Stationen** brauchen überhaupt noch Vorbereitung: Stage 1 und 2, und dort geht es nur um Dinge, die in der Schule zählbar sein müssen. **Es muss nichts mehr ausgedruckt oder ausgelegt werden.**
 
 Die Antworteingabe ist tolerant: Groß-/Kleinschreibung, Leerzeichen und Satzzeichen werden ignoriert (`normalizeAnswer()`).
 
@@ -138,29 +137,19 @@ Die Aufgaben stehen in `ERDING_TASKS` (MainActivity.kt). Wer sie ändert, muss p
 
 ---
 
-### Stage 7 — Raumnummern
-`room_sorting` · **`00245`**
-
-Raumnummern der Größe nach sortieren, dann alle Ziffern aneinanderhängen — **führende Nullen bleiben erhalten**. Beispiel: Räume `002`, `4`, `5` → sortiert → `00245`.
-
-*Die einzige Station, für die noch etwas ausgedruckt werden muss.*
-
----
-
-### Stage 8 — Shutdown *(Finale)*
+### Stage 7 — Shutdown *(Finale)*
 `finale` · eigene Mechanik (`FinaleGate`), läuft **nicht** über `acceptedAnswers`
 
 Das Finale baut auf allen vorherigen Rätseln auf und läuft in drei Phasen.
 
-**Phase 1 — Fünf Riegel.** Jeder Riegel fragt einen Code ab, den die Gruppe unterwegs schon geknackt hat. Eine Leiste oben zeigt `ZU` / `OFFEN` pro Riegel.
+**Phase 1 — Vier Riegel.** Jeder Riegel fragt einen Code ab, den die Gruppe unterwegs schon geknackt hat. Eine Leiste oben zeigt `ZU` / `OFFEN` pro Riegel.
 
 | Riegel | Verlangt | Antwort | Herkunft |
 | --- | --- | --- | --- |
 | 1 | Trainings-Code | `419` | Stage 1 |
 | 2 | Ergebnis der Formel | `8202` | Stage 2 |
 | 3 | Englisches Wort | `APPLE` | Stage 4 |
-| 4 | Sortierte Raumnummern | `00245` | Stage 7 |
-| 5 | Letzte vier Ziffern des Master-Codes | `6125` | Stage 5 |
+| 4 | Letzte vier Ziffern des Master-Codes | `6125` | Stage 5 |
 
 Nach **zwei** Fehlversuchen an einem Riegel blendet sich automatisch ein Tipp ein. Ein Fehlversuch kostet ein Leben.
 
@@ -196,15 +185,17 @@ Jederzeit erreichbar, auch mitten in einem Rätsel — der Spielstand bleibt erh
 | --- | --- | --- |
 | Intro | INTRO-SEQUENZ | 0 |
 | Tutorial | TRAININGSMODUS | 1 |
-| Mission | MISSION | 2–7 |
-| Finale | FINALE | 8 |
+| Mission | MISSION | 2–6 |
+| Finale | FINALE | 7 |
 | Archiv | ARCHIV | nur im Handbuch |
 
 **Entwickler-Werkzeuge.** Nur im Debug-Build: im Hauptmenü 5× auf den Totenkopf tippen. Danach: Rätsel überspringen, Leben auffüllen, Unverwundbarkeit.
 
 **App-Icon & Kategorie.** Das Launcher-Icon ist das KAG-Logo (`kag_logo.png`) als adaptives Icon; die App meldet sich mit `android:appCategory="game"` als Spiel an.
 
-**Baseline Profiles.** Das Modul `:baselineprofile` erzeugt ein Startprofil, damit die App flüssiger startet. Neu erzeugen mit `./gradlew :app:generateBaselineProfile` bei angeschlossenem Gerät; das Ergebnis landet in `app/src/release/generated/baselineProfiles/`.
+**Baseline Profiles.** Das Modul `:baselineprofile` erzeugt ein Startprofil. Neu erzeugen mit `./gradlew :app:generateBaselineProfile` bei angeschlossenem Gerät; das Ergebnis landet in `app/src/release/generated/baselineProfiles/`.
+
+> ⚠️ **Bringt derzeit kaum etwas.** Mit AGP 9.2.1 und dem noch als Alpha vorliegenden Plugin läuft die Sammel-Variante durch R8, sodass das Profil obfuskierte Namen enthält, die im echten Release-Build nicht mehr passen (`Startup class not found` beim Bauen). Details und die erfolglos versuchten Auswege stehen als Kommentar in `app/build.gradle.kts`. Das Profil schadet nicht (~6 KB), sollte aber mit einer stabilen Plugin-Version neu erzeugt werden.
 
 ---
 
@@ -216,8 +207,9 @@ Jederzeit erreichbar, auch mitten in einem Rätsel — der Spielstand bleibt erh
 | Schatten-Rätsel (`1994`) | Rätsel mit Zettel am Fenster | entfernt, Fragment wird vorgegeben |
 | Spiegel-Code (`60`) | Rätsel mit Spiegel + Tasche | entfernt, Fragment wird vorgegeben |
 | Psychologie-Zettel (`MESPACE`) | Rätsel mit Zettel | ersatzlos entfernt |
+| Raumnummern (`00245`) | Rätsel mit ausgedruckter Kursliste | ersatzlos entfernt |
 | Archiv | drei Stationen im Ablauf | Handbuch, jederzeit erreichbar |
-| Finale | nur Abschlusstext | fünf Riegel + Notabschaltung + Siegsequenz |
-| Stationen im Ablauf | 16 | 9 |
+| Finale | nur Abschlusstext | vier Riegel + Notabschaltung + Siegsequenz |
+| Stationen im Ablauf | 16 | 8 |
 
 *Quelle: `MainActivity.kt` (Listen `gameNodes`, `manualNodes`, `FINALE_LOCKS`).*
